@@ -62,3 +62,25 @@ describe("chunkRange", () => {
     expect(chunkRange("2026-10-01", "2026-10-05")).toEqual([["2026-10-01", "2026-10-05"]]);
   });
 });
+
+describe("flow and news parsers", () => {
+  it("maps foreign flow and sorts by date", async () => {
+    const { parseForeignFlow } = await import("../parse");
+    const flows = parseForeignFlow({
+      symbol: "BBCA.JK",
+      data: [
+        { date: "2026-10-22", net_foreign_inflow: -5e9, foreign_buy_idr: 1e9, foreign_sell_idr: 6e9, foreign_share: 0.4 },
+        { date: "2026-10-21", net_foreign_inflow: null, foreign_buy_idr: 0, foreign_sell_idr: 0, foreign_share: null },
+      ],
+    });
+    expect(flows.map((f) => f.date)).toEqual(["2026-10-21", "2026-10-22"]);
+    expect(flows[1]).toEqual({ date: "2026-10-22", net: -5e9, buy: 1e9, sell: 6e9, foreignShare: 0.4 });
+  });
+
+  it("maps news results and defaults missing tags", async () => {
+    const { parseNews } = await import("../parse");
+    expect(parseNews({ results: [{ title: "T", source: "https://x", timestamp: "2026-10-22T09:00:00", tags: null }] })).toEqual([
+      { timestamp: "2026-10-22T09:00:00", title: "T", url: "https://x", tags: [] },
+    ]);
+  });
+});

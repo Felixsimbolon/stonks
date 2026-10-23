@@ -135,6 +135,39 @@ describe("hypotheses", () => {
     expect(inv.hypotheses.at(-1)!.verdict).toBe("untested");
   });
 
+  function flowsAround(netOnMove: number) {
+    return sc.dates.slice(80, 156).map((date, i) => ({
+      date,
+      net: date === moveDate ? netOnMove : (i % 2 ? 1 : -1) * 1e9,
+      buy: 0,
+      sell: 0,
+      foreignShare: 0.4,
+    }));
+  }
+
+  it("credits foreign flow when foreigners sold hard into a stock-specific drop", () => {
+    const inv = investigate(input(-0.06, 0, { flows: flowsAround(-20e9), news: [] }));
+    expect(verdictOf(inv, "foreign_flow")).toBe("supported");
+    expect(verdictOf(inv, "news")).toBe("refuted");
+  });
+
+  it("does not credit foreign flow that went against the move", () => {
+    const inv = investigate(input(-0.06, 0, { flows: flowsAround(20e9) }));
+    expect(verdictOf(inv, "foreign_flow")).toBe("refuted");
+  });
+
+  it("marks flow and news untested when not fetched", () => {
+    const inv = investigate(input(-0.06, 0));
+    expect(verdictOf(inv, "foreign_flow")).toBe("untested");
+    expect(verdictOf(inv, "news")).toBe("untested");
+  });
+
+  it("finds news on the move day", () => {
+    const news = [{ timestamp: `${moveDate}T10:00:00`, title: "Big news", url: "https://x", tags: ["bearish"] }];
+    const inv = investigate(input(-0.06, 0, { news }));
+    expect(verdictOf(inv, "news")).toBe("supported");
+  });
+
   it("cites evidence that exists on the board", () => {
     const inv = investigate(input(-0.06, -0.06));
     const ids = new Set(inv.evidence.map((e) => e.id));

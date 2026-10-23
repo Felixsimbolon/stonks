@@ -19,6 +19,8 @@ const NAMES: Record<HypothesisType, string> = {
   dividend: "Ex-dividend drop",
   liquidity: "Unusual trading volume",
   noise: "Just noise",
+  foreign_flow: "Foreign investors drove it",
+  news: "News around the move",
 };
 
 const VERDICT_STYLE: Record<Verdict, { label: string; color: string }> = {
@@ -49,6 +51,12 @@ function formatEvidence(e: Evidence): string {
       return sigma(e.value);
     case "volume_ratio":
       return `${e.value.toFixed(1)}×`;
+    case "foreign_net_z":
+      return sigma(e.value);
+    case "foreign_net":
+      return `${e.value < 0 ? "−" : "+"}IDR ${(Math.abs(e.value) / 1e9).toFixed(1)}B`;
+    case "news_count":
+      return String(e.value);
     default:
       return pct(e.value);
   }
@@ -230,6 +238,25 @@ function HypothesisRow({
           )}
 
           <p className={`mt-3 text-sm leading-relaxed ${dimmed ? "text-faint" : "text-muted"}`}>{h.rationale}</p>
+          {h.type === "news" && r.articles.length > 0 && (
+            <ul className="mt-3 space-y-2">
+              {r.articles.slice(0, 4).map((a) => (
+                <li key={a.url + a.timestamp} className="text-sm">
+                  <a
+                    href={a.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-ink underline decoration-hair underline-offset-4 transition-colors hover:decoration-stock"
+                  >
+                    {a.title}
+                  </a>
+                  <span className="num ml-2 text-xs text-faint">
+                    {shortDate(a.timestamp.slice(0, 10))} {a.timestamp.slice(11, 16)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
           {falsifiers.map(({ f, w }) => (
             <FalsifierLine key={f.description} f={f} window={w} />
           ))}
@@ -256,6 +283,12 @@ export function Investigation({
   const { move, evidence, hypotheses } = r.investigation;
   const h = headline(ticker, r);
   const lit = new Set(focusH?.evidenceIds ?? []);
+  const missingNames = [
+    r.missing.peers && "Peer data",
+    r.missing.events && "dividend data",
+    r.missing.flows && "foreign flow",
+    r.missing.news && "news",
+  ].filter((x): x is string => Boolean(x));
 
   return (
     <AnimatePresence mode="wait">
@@ -286,20 +319,21 @@ export function Investigation({
           {r.subSector ?? "Unknown subsector"} · compared against {r.peerCount} peers · IHSG {pct(move.marketRet)} that day
         </p>
 
-        {(r.missing.peers || r.missing.events) && (
+        {missingNames.length > 0 && (
           <div className="mt-10 max-w-2xl border-l-2 pl-6" style={{ borderImage: "linear-gradient(180deg, var(--sector), transparent) 1" }}>
             <p className="text-sm leading-relaxed text-muted">
-              {r.missing.peers && r.missing.events
-                ? "Peer and dividend data"
-                : r.missing.peers
-                  ? "Peer data"
-                  : "Dividend data"}{" "}
-              for this move hasn&apos;t been fetched, so the explanations that need it show as untested.
+              {missingNames.join(", ").replace(/, ([^,]*)$/, " and $1")} for this move{" "}
+              {missingNames.length === 1 ? "hasn't" : "haven't"} been fetched, so the explanations that need{" "}
+              {missingNames.length === 1 ? "it" : "them"} show as untested.
             </p>
             <FetchButton
               action={fetchEvidence}
               label="fetch evidence"
-              hint="first time for a ticker ≈ 20–30 credits (peer history); stored after that"
+              hint={
+                r.missing.peers
+                  ? "first time for a ticker ≈ 20–30 credits (peer history); stored after that"
+                  : "≈ 1–3 credits; foreign flow and news only when part of the move is stock-specific"
+              }
               className="mt-3"
             />
           </div>
@@ -319,8 +353,8 @@ export function Investigation({
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: 0.6 }}
           >
-            Something specific to {ticker} happened that market, sector, dividend and volume data don&apos;t capture. That
-            is the part worth digging into: news, filings, or broker flow.
+            Something specific to {ticker} happened that none of the explanations we could test captures. That is the
+            part worth digging into: company filings or broker summaries.
           </motion.p>
         )}
 
@@ -357,7 +391,9 @@ export function Investigation({
                         {e.source}
                       </span>
                     </dt>
-                    <dd className="num text-sm text-ink">{formatEvidence(e)}</dd>
+                    <dd className="num max-w-[9rem] truncate text-sm text-ink" title={formatEvidence(e)}>
+                      {formatEvidence(e)}
+                    </dd>
                   </motion.div>
                 );
               })}

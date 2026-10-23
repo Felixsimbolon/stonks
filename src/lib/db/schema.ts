@@ -24,6 +24,20 @@ export const priceBars = sqliteTable(
   (t) => [primaryKey({ columns: [t.ticker, t.date] })],
 );
 
+// Daily foreign flow per ticker (IDR). Like price bars, past days never change.
+export const foreignFlows = sqliteTable(
+  "foreign_flows",
+  {
+    ticker: text("ticker").notNull(),
+    date: text("date").notNull(),
+    net: real("net"),
+    buy: real("buy").notNull(),
+    sell: real("sell").notNull(),
+    foreignShare: real("foreign_share"),
+  },
+  (t) => [primaryKey({ columns: [t.ticker, t.date] })],
+);
+
 // Which date range of price_bars is already stored per ticker/index, so only
 // the missing part is fetched. `through` is the last fully settled date.
 export const barCoverage = sqliteTable("bar_coverage", {

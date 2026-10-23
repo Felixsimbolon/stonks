@@ -1,4 +1,5 @@
 import {
+  decompose,
   detectMoves,
   evaluateFalsifier,
   falsifiersFor,
@@ -8,12 +9,16 @@ import {
   type FalsifierEvaluation,
   type Investigation,
   type Move,
+  type NewsItem,
+  NOT_NEEDED_BELOW,
 } from "@/lib/engine";
 import {
   addDays,
   getCompanyEvents,
   getDailyBars,
+  getForeignFlows,
   getIndexBars,
+  getNews,
   getPeers,
   NotCachedError,
   SectorsError,
@@ -30,6 +35,8 @@ import {
 
 export const MARKET_INDEX = "ihsg";
 const PEER_HISTORY_DAYS = 180;
+// ~58 sessions of foreign flow before the move: one 90-day call for recent moves.
+const FLOW_HISTORY_DAYS = 80;
 
 export interface ScanResult {
   ticker: string;
@@ -55,8 +62,10 @@ export interface InvestigationResult {
   subSector: string | null;
   peerCount: number;
   falsifiers: (Falsifier & { evaluation: FalsifierEvaluation })[];
+  /** Articles tagged with the ticker on the move day or the day before. */
+  articles: NewsItem[];
   /** Evidence that was never fetched; the hypotheses that need it show as untested. */
-  missing: { peers: boolean; events: boolean };
+  missing: { peers: boolean; events: boolean; flows: boolean; news: boolean };
 }
 
 export async function investigateMove(
@@ -86,6 +95,14 @@ export async function investigateMove(
   const eventInfo = await orMissing(getCompanyEvents(ticker, { refresh }));
   const { events, covers } = eventInfo ?? { events: undefined, covers: undefined };
 
+  // Foreign flow and news only matter for the stock-specific part of the move.
+  // Skip fetching them when market + sector already explain it (saves credits).
+  const needStockEvidence = decompose(move, bars, market, peers).shares.stockSpecific >= NOT_NEEDED_BELOW;
+  const stockMode = { refresh: refresh && needStockEvidence };
+  const flows = await getForeignFlows(ticker, addDays(move.date, -FLOW_HISTORY_DAYS), to, stockMode);
+  const newsTo = addDays(move.date, 1) < to ? addDays(move.date, 1) : to;
+  const news = await orMissing(getNews(ticker, addDays(move.date, -2), newsTo, stockMode));
+
   const investigation = investigate({
     ticker,
     move,
@@ -94,17 +111,21 @@ export async function investigateMove(
     peers,
     events,
     eventTypesCovered: covers,
+    flows: flows ?? undefined,
+    news: news ?? undefined,
     sources: {
       stock: sourceOf.daily(ticker),
       market: sourceOf.index(MARKET_INDEX),
       peers: sourceOf.peers(ticker),
       events: sourceOf.corporateActions(ticker),
+      flows: sourceOf.flows(ticker),
+      news: sourceOf.news(ticker),
     },
   });
 
   const falsifiers = falsifiersFor(investigation).map((f) => ({
     ...f,
-    evaluation: evaluateFalsifier(f.rule, { move, bars, marketBars: market, peers }),
+    evaluation: evaluateFalsifier(f.rule, { move, bars, marketBars: market, peers, flows: flows ?? undefined }),
   }));
 
   return {
@@ -112,7 +133,16 @@ export async function investigateMove(
     subSector: peerInfo?.subSector ?? null,
     peerCount: Object.keys(peers).length,
     falsifiers,
-    missing: { peers: peersMissing, events: !eventInfo },
+    articles: (news ?? []).filter((n) => {
+      const day = n.timestamp.slice(0, 10);
+      return day >= addDays(move.date, -1) && day <= move.date;
+    }),
+    missing: {
+      peers: peersMissing,
+      events: !eventInfo,
+      flows: needStockEvidence && flows === null,
+      news: needStockEvidence && news === null,
+    },
   };
 }
 

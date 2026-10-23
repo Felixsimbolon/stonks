@@ -34,7 +34,9 @@ export type HypothesisType =
   | "earnings"
   | "dividend"
   | "liquidity"
-  | "noise";
+  | "noise"
+  | "foreign_flow"
+  | "news";
 
 // "not_needed": market + sector already explain the move, so there is no
 // stock-specific part left for this explanation to account for.
@@ -66,6 +68,22 @@ export interface Evidence {
   source: string; // where the raw data came from, e.g. "sectors:daily/BBCA"
 }
 
+/** One day of foreign investor flow, values in IDR. */
+export interface FlowPoint {
+  date: string;
+  net: number | null; // foreign buy - sell; positive = foreigners were net buyers
+  buy: number;
+  sell: number;
+  foreignShare: number | null; // foreign share of total traded value, 0..1
+}
+
+export interface NewsItem {
+  timestamp: string; // ISO without offset; timezone not documented by Sectors
+  title: string;
+  url: string;
+  tags: string[];
+}
+
 export interface CompanyEvent {
   type: "earnings_report" | "ex_dividend" | "corporate_action";
   date: string;
@@ -87,11 +105,16 @@ export interface InvestigationInput {
   // Which event types `events` actually covers. Omitted = all types. A type
   // that is not covered makes its hypothesis "untested".
   eventTypesCovered?: CompanyEvent["type"][];
+  // undefined = not fetched, so the hypothesis is "untested".
+  flows?: FlowPoint[]; // daily foreign flow up to and after the move
+  news?: NewsItem[]; // articles tagged with the ticker around the move
   sources: {
     stock: string;
     market: string;
     peers: string;
     events?: string;
+    flows?: string;
+    news?: string;
   };
 }
 

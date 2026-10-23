@@ -1,5 +1,5 @@
 import { dailyReturns, median } from "./stats";
-import type { Bar, HypothesisResult, HypothesisType, Investigation, Move } from "./types";
+import type { Bar, FlowPoint, HypothesisResult, HypothesisType, Investigation, Move } from "./types";
 
 // A tiny, deterministic rule language for "what would prove this story wrong".
 // Rules are stored as JSON and re-evaluated every day after the market closes.
@@ -8,7 +8,8 @@ export type FalsifierMetric =
   | "cum_abnormal_return" // sum of beta-adjusted returns after the move day
   | "spread_vs_peer_median" // stock cum return minus median peer cum return after the move day
   | "retracement" // share of the move given back (1 = fully reversed, negative = extended)
-  | "avg_volume_ratio"; // avg volume after the move / pre-move baseline volume
+  | "avg_volume_ratio" // avg volume after the move / pre-move baseline volume
+  | "foreign_flow_ratio"; // net foreign flow after the move / net foreign flow on the move day
 
 export type FalsifierRule =
   | { metric: FalsifierMetric; window: number; op: ">" | "<" | "abs>"; value: number }
@@ -25,6 +26,7 @@ export interface PostMoveData {
   bars: Bar[];
   marketBars: Bar[];
   peers: Record<string, Bar[]>;
+  flows?: FlowPoint[];
 }
 
 export type FalsifierStatus = "pending" | "triggered" | "survived";
@@ -74,6 +76,13 @@ function metricValue(metric: FalsifierMetric, data: PostMoveData, n: number): nu
       if (idx < 0 || after.length < n || move.volumeRatio === 0) return null;
       const baseline = bars[idx].volume / move.volumeRatio;
       return after.reduce((a, b) => a + b.volume, 0) / n / baseline;
+    }
+    case "foreign_flow_ratio": {
+      const flows = data.flows ?? [];
+      const day = flows.find((f) => f.date === move.date)?.net;
+      const after = flows.filter((f) => f.date > move.date).slice(0, n);
+      if (!day || after.length < n || after.some((f) => f.net === null)) return null;
+      return after.reduce((a, f) => a + f.net!, 0) / day;
     }
   }
 }
@@ -127,6 +136,18 @@ export function defaultFalsifiers({ move, decomposition }: Investigation, hypoth
         rule: { metric: "spread_vs_peer_median", window: 5, op: "abs>", value: gap },
       }];
     }
+    case "foreign_flow":
+      return [{
+        hypothesisType: "foreign_flow",
+        description: "Foreigners reverse: over the next 5 sessions they undo more than half of the move-day flow.",
+        rule: { metric: "foreign_flow_ratio", window: 5, op: "<", value: -0.5 },
+      }];
+    case "news":
+      return [{
+        hypothesisType: "news",
+        description: "The market gives back more than half the move within 5 trading days, so the news did not stick.",
+        rule: { metric: "retracement", window: 5, op: ">", value: 0.5 },
+      }];
     case "earnings":
       return [{
         hypothesisType: "earnings",

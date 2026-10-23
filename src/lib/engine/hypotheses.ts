@@ -1,5 +1,5 @@
 import { decompose, volumeSignal } from "./decompose";
-import { clamp01, dayDiff } from "./stats";
+import { clamp01, dayDiff, median, robustStd } from "./stats";
 import type {
   CompanyEvent,
   Decomposition,
@@ -47,6 +47,7 @@ type Test = (ctx: Ctx) => HypothesisResult;
 
 const pct = (x: number) => `${x >= 0 ? "+" : ""}${(x * 100).toFixed(2)}%`;
 const share = (x: number) => `${Math.round(x * 100)}%`;
+const idr = (x: number) => `${x < 0 ? "−" : ""}IDR ${(Math.abs(x) / 1e9).toFixed(1)}B`;
 
 function result(type: HypothesisType, score: number, rationale: string, evidenceIds: string[]): HypothesisResult {
   return { type, score, verdict: verdictFromScore(score), rationale, evidenceIds };
@@ -177,7 +178,73 @@ const noise: Test = (ctx) => {
   );
 };
 
-const TESTS: Test[] = [marketBeta, sectorRotation, earnings, dividend, liquidity, noise];
+/** Foreign investors as the stock-specific driver: net flow far outside its usual range, in the move's direction. */
+const foreignFlow: Test = (ctx) => {
+  const { input, d, board, ids } = ctx;
+  if (!input.flows) return untested("foreign_flow", "Foreign flow not fetched.");
+  const skip = notNeeded("foreign_flow", ctx);
+  if (skip) return skip;
+
+  const { move, flows, sources } = input;
+  const src = sources.flows ?? "unknown";
+  const day = flows.find((f) => f.date === move.date);
+  if (!day || day.net === null) return untested("foreign_flow", "Sectors has no foreign split for the move date.");
+  const prior = flows.flatMap((f) => (f.date < move.date && f.net !== null ? [f.net] : [])).slice(-60);
+  if (prior.length < 10) return untested("foreign_flow", "Not enough foreign flow history before the move.");
+
+  const sd = robustStd(prior);
+  const z = sd > 0 ? (day.net - median(prior)) / sd : 0;
+  const dir = Math.sign(d.stockSpecific) || 1;
+  const aligned = Math.sign(z) === dir;
+  const ev = [
+    board.add({ kind: "foreign_net", label: "Net foreign flow on the move day", value: day.net, source: src }),
+    board.add({ kind: "foreign_net_z", label: "Net foreign flow vs its usual range", value: z, source: "engine" }),
+    ids.stockSpecific,
+  ];
+  const side = day.net >= 0 ? "buyers" : "sellers";
+  const rationale = aligned
+    ? `Foreigners were net ${side} of ${idr(day.net)}, ${Math.abs(z).toFixed(1)}σ beyond their usual flow, in the direction of the move.`
+    : Math.abs(z) < 1
+      ? `Foreign flow (${idr(day.net)}) was within its usual range.`
+      : `Foreign flow (${idr(day.net)}) went against the move.`;
+  return result("foreign_flow", aligned ? d.shares.stockSpecific * clamp01((Math.abs(z) - 1) / 2) : 0, rationale, ev);
+};
+
+/** A news catalyst: articles tagged with the ticker on the move day or the day before. */
+const news: Test = (ctx) => {
+  const { input, d, board, ids } = ctx;
+  if (!input.news) return untested("news", "News not fetched.");
+  const skip = notNeeded("news", ctx);
+  if (skip) return skip;
+
+  const { move, sources } = input;
+  const src = sources.news ?? "unknown";
+  const around = input.news.filter((n) => {
+    const days = dayDiff(n.timestamp.slice(0, 10), move.date);
+    return days >= 0 && days <= 1;
+  });
+  const countId = board.add({ kind: "news_count", label: "Articles on the move day or the day before", value: around.length, source: src });
+  if (around.length === 0) return result("news", 0, "No articles tagged with the ticker on the move day or the day before.", [countId]);
+
+  // Sectors tags some articles bullish/bearish; use them only as a tone hint.
+  const dir = Math.sign(d.stockSpecific) || 1;
+  const tagged = (word: string) => around.filter((n) => n.tags.some((t) => t.toLowerCase().includes(word)));
+  const withMove = tagged(dir > 0 ? "bull" : "bear");
+  const againstMove = tagged(dir > 0 ? "bear" : "bull");
+  const tone = Math.sign(withMove.length - againstMove.length);
+  const lead = withMove[0] ?? around[0];
+  const headlineId = board.add({ kind: "news_headline", label: "Headline", value: lead.title, source: lead.url });
+
+  const toneText = tone > 0 ? " Tagged in the direction of the move." : tone < 0 ? " Tagged against the direction of the move." : "";
+  return result(
+    "news",
+    d.shares.stockSpecific * (tone > 0 ? 0.8 : tone === 0 ? 0.5 : 0.2),
+    `${around.length} article${around.length === 1 ? "" : "s"} around the move, e.g. “${lead.title}”.${toneText} Timestamps can't tell a catalyst from coverage of the move itself.`,
+    [countId, headlineId, ids.stockSpecific],
+  );
+};
+
+const TESTS: Test[] = [marketBeta, sectorRotation, earnings, dividend, liquidity, foreignFlow, news, noise];
 
 const RANK: Record<Verdict, number> = { supported: 0, partial: 0, weak: 0, refuted: 0, not_needed: 1, untested: 2 };
 

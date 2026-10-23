@@ -1,4 +1,4 @@
-import type { Bar, CompanyEvent } from "@/lib/engine";
+import type { Bar, CompanyEvent, FlowPoint, NewsItem } from "@/lib/engine";
 
 // Pure mappers from Sectors v2 response shapes to engine types.
 
@@ -75,4 +75,35 @@ export function parseDividendEvents(actions: CorporateActions): CompanyEvent[] {
     date: d.ex_date,
     dividendPerShare: d.dividend_amount ?? undefined,
   }));
+}
+
+export interface ForeignFlowResponse {
+  symbol: string;
+  data: {
+    date: string;
+    net_foreign_inflow: number | null;
+    foreign_buy_idr: number;
+    foreign_sell_idr: number;
+    foreign_share: number | null;
+  }[];
+}
+
+export interface NewsResponse {
+  results: { title: string; source: string; timestamp: string; tags?: string[] | null }[];
+}
+
+export function parseForeignFlow(res: ForeignFlowResponse): FlowPoint[] {
+  return res.data
+    .map((d) => ({
+      date: d.date,
+      net: d.net_foreign_inflow,
+      buy: d.foreign_buy_idr,
+      sell: d.foreign_sell_idr,
+      foreignShare: d.foreign_share,
+    }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+export function parseNews(res: NewsResponse): NewsItem[] {
+  return res.results.map((r) => ({ timestamp: r.timestamp, title: r.title, url: r.source, tags: r.tags ?? [] }));
 }
