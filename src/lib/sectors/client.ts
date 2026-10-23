@@ -17,11 +17,20 @@ export class SectorsError extends Error {
   }
 }
 
+/** Thrown in cache-only mode when nothing has been fetched for a path yet. */
+export class NotCachedError extends Error {
+  constructor(readonly path: string) {
+    super(`Not fetched yet: ${path}`);
+  }
+}
+
 export interface GetOptions {
   /** Cache lifetime in ms; `Infinity` for immutable data; 0 to bypass the response cache. */
   ttlMs: number;
   /** Credits this call costs on success (company report: 1 per section). */
   credits?: number;
+  /** Never call Sectors: return the cached payload even if stale, or throw NotCachedError. */
+  cacheOnly?: boolean;
 }
 
 const isBilled = (status: number) => (status >= 200 && status < 300) || status === 404;
@@ -44,14 +53,15 @@ async function fetchWithRetry(url: string, key: string): Promise<Response> {
 }
 
 /** GET a Sectors v2 path such as `/daily/BBCA/?start=...`. */
-export async function sectorsGet<T>(path: string, { ttlMs, credits = 1 }: GetOptions): Promise<T> {
+export async function sectorsGet<T>(path: string, { ttlMs, credits = 1, cacheOnly = false }: GetOptions): Promise<T> {
   const now = Date.now();
 
-  if (ttlMs > 0) {
+  if (ttlMs > 0 || cacheOnly) {
     const [cached] = await db.select().from(schema.apiCache).where(eq(schema.apiCache.path, path));
-    if (cached && (!cached.expiresAt || cached.expiresAt.getTime() > now)) {
+    if (cached && (cacheOnly || !cached.expiresAt || cached.expiresAt.getTime() > now)) {
       return JSON.parse(cached.payload) as T;
     }
+    if (cacheOnly) throw new NotCachedError(path);
   }
 
   const used = await creditsUsed();

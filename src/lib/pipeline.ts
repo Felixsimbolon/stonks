@@ -15,13 +15,18 @@ import {
   getDailyBars,
   getIndexBars,
   getPeers,
+  NotCachedError,
   SectorsError,
+  type FetchMode,
   sourceOf,
   todayWib,
 } from "@/lib/sectors";
 
 // Glue between Sectors data and the pure engine. Calls are sequential on
 // purpose: the credit check is per call, and SQLite prefers one writer.
+//
+// Nothing here calls Sectors unless `refresh: true` is passed. Pages read the
+// local store; fetching only happens when the user asks for it.
 
 export const MARKET_INDEX = "ihsg";
 const PEER_HISTORY_DAYS = 180;
@@ -33,12 +38,15 @@ export interface ScanResult {
   moves: Move[];
 }
 
-/** Fetch history and flag unusual moves in the last `scanDays` trading days. */
-export async function scanTicker(ticker: string, { historyDays = 270, scanDays = 60 } = {}): Promise<ScanResult> {
+/** Load (or with `refresh`, fetch) history and flag unusual moves in the last `scanDays` trading days. */
+export async function scanTicker(
+  ticker: string,
+  { historyDays = 270, scanDays = 60, refresh = false }: { historyDays?: number; scanDays?: number } & FetchMode = {},
+): Promise<ScanResult> {
   const to = todayWib();
   const from = addDays(to, -historyDays);
-  const bars = await getDailyBars(ticker, from, to);
-  const market = await getIndexBars(MARKET_INDEX, from, to);
+  const bars = await getDailyBars(ticker, from, to, { refresh });
+  const market = await getIndexBars(MARKET_INDEX, from, to, { refresh });
   return { ticker: ticker.toUpperCase(), bars, market, moves: detectMoves(ticker.toUpperCase(), bars, market, scanDays) };
 }
 
@@ -47,27 +55,36 @@ export interface InvestigationResult {
   subSector: string | null;
   peerCount: number;
   falsifiers: (Falsifier & { evaluation: FalsifierEvaluation })[];
+  /** Evidence that was never fetched; the hypotheses that need it show as untested. */
+  missing: { peers: boolean; events: boolean };
 }
 
-export async function investigateMove(scan: ScanResult, move: Move): Promise<InvestigationResult> {
+export async function investigateMove(
+  scan: ScanResult,
+  move: Move,
+  { refresh = false }: FetchMode = {},
+): Promise<InvestigationResult> {
   const { ticker, bars, market } = scan;
   const to = todayWib();
 
   // ~120 trading days before the move, so peer betas and the stock-specific
   // volatility can be estimated. Stored bars are reused across moves and runs.
   const peerFrom = addDays(move.date, -PEER_HISTORY_DAYS);
-  const { subSector, peers: peerTickers } = await getPeers(ticker);
+  const peerInfo = await orMissing(getPeers(ticker, { refresh }));
   const peers: Record<string, Bar[]> = {};
-  for (const p of peerTickers) {
+  for (const p of peerInfo?.peers ?? []) {
     try {
-      peers[p] = await getDailyBars(p, peerFrom, to);
+      const peerBars = await getDailyBars(p, peerFrom, to, { refresh });
+      if (peerBars.length > 0) peers[p] = peerBars;
     } catch (e) {
       if (e instanceof SectorsError && e.status === 404) continue; // delisted / renamed peer
       throw e;
     }
   }
+  const peersMissing = !peerInfo || (peerInfo.peers.length > 0 && !Object.values(peers).some((b) => b.some((x) => x.date === move.date)));
 
-  const { events, covers } = await getCompanyEvents(ticker);
+  const eventInfo = await orMissing(getCompanyEvents(ticker, { refresh }));
+  const { events, covers } = eventInfo ?? { events: undefined, covers: undefined };
 
   const investigation = investigate({
     ticker,
@@ -90,5 +107,21 @@ export async function investigateMove(scan: ScanResult, move: Move): Promise<Inv
     evaluation: evaluateFalsifier(f.rule, { move, bars, marketBars: market, peers }),
   }));
 
-  return { investigation, subSector, peerCount: Object.keys(peers).length, falsifiers };
+  return {
+    investigation,
+    subSector: peerInfo?.subSector ?? null,
+    peerCount: Object.keys(peers).length,
+    falsifiers,
+    missing: { peers: peersMissing, events: !eventInfo },
+  };
+}
+
+/** Resolve to null when the data was never fetched (read-only mode). */
+async function orMissing<T>(p: Promise<T>): Promise<T | null> {
+  try {
+    return await p;
+  } catch (e) {
+    if (e instanceof NotCachedError) return null;
+    throw e;
+  }
 }

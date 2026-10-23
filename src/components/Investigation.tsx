@@ -3,7 +3,9 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useState } from "react";
 import type { Evidence, HypothesisResult, HypothesisType, Verdict } from "@/lib/engine";
+import type { FetchResult } from "@/app/actions";
 import type { TickerView } from "@/lib/views";
+import { FetchButton } from "./FetchButton";
 import { dirColor, pct, shortDate, share, sigma } from "./format";
 
 type Result = NonNullable<TickerView["result"]>;
@@ -240,7 +242,15 @@ function HypothesisRow({
 
 // ── Board ────────────────────────────────────────────────────────────────
 
-export function Investigation({ ticker, result: r }: { ticker: string; result: Result }) {
+export function Investigation({
+  ticker,
+  result: r,
+  fetchEvidence,
+}: {
+  ticker: string;
+  result: Result;
+  fetchEvidence: () => Promise<FetchResult>;
+}) {
   const [focusPart, setFocusPart] = useState<PartKey | null>(null);
   const [focusH, setFocusH] = useState<HypothesisResult | null>(null);
   const { move, evidence, hypotheses } = r.investigation;
@@ -275,6 +285,25 @@ export function Investigation({ ticker, result: r }: { ticker: string; result: R
         <p className="mt-4 text-sm text-faint">
           {r.subSector ?? "Unknown subsector"} · compared against {r.peerCount} peers · IHSG {pct(move.marketRet)} that day
         </p>
+
+        {(r.missing.peers || r.missing.events) && (
+          <div className="mt-10 max-w-2xl border-l-2 pl-6" style={{ borderImage: "linear-gradient(180deg, var(--sector), transparent) 1" }}>
+            <p className="text-sm leading-relaxed text-muted">
+              {r.missing.peers && r.missing.events
+                ? "Peer and dividend data"
+                : r.missing.peers
+                  ? "Peer data"
+                  : "Dividend data"}{" "}
+              for this move hasn&apos;t been fetched, so the explanations that need it show as untested.
+            </p>
+            <FetchButton
+              action={fetchEvidence}
+              label="fetch evidence"
+              hint="first time for a ticker ≈ 20–30 credits (peer history); stored after that"
+              className="mt-3"
+            />
+          </div>
+        )}
 
         {/* split */}
         <section className="mt-14">

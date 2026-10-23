@@ -16,7 +16,7 @@ async function main() {
   const top = arg("top", 3);
   const creditsBefore = await creditsUsed();
 
-  const scan = await scanTicker(ticker, { scanDays: arg("scan", 60) });
+  const scan = await scanTicker(ticker, { scanDays: arg("scan", 60), refresh: true });
   const first = scan.bars[0]?.date;
   const last = scan.bars.at(-1)?.date;
   console.log(`\n${scan.ticker}: ${scan.bars.length} bars (${first} → ${last}), IHSG ${scan.market.length} bars`);
@@ -30,7 +30,7 @@ async function main() {
 
   const biggest = [...scan.moves].sort((a, b) => Math.abs(b.abnormalZ) - Math.abs(a.abnormalZ)).slice(0, top);
   for (const move of biggest) {
-    const r = await investigateMove(scan, move);
+    const r = await investigateMove(scan, move, { refresh: true });
     const inv = r.investigation;
     console.log(`\n${"─".repeat(78)}`);
     console.log(

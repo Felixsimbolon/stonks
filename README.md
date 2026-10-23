@@ -16,6 +16,8 @@ explanation holds, and know what would prove it wrong.
 
 Every number comes from code in [`src/lib/engine`](src/lib/engine), never from an LLM.
 
+**Sectors is only called when you click.** Pages read the local store. Use *update prices* (new sessions since the last update) or *fetch evidence* (peers + corporate actions for a move). Daily bars are fetched once and kept; a session counts as published after 18:00 WIB; peers are re-fetched after 30 days and corporate actions after 7.
+
 ## Setup
 
 ```bash

@@ -5,7 +5,8 @@ import { windowOf, type Move } from "@/lib/engine";
 import { investigateMove, scanTicker, type InvestigationResult } from "@/lib/pipeline";
 import { creditsUsed } from "@/lib/sectors";
 
-// Serializable data for pages. Everything here is safe to hand to client components.
+// Serializable data for pages. Everything here is safe to hand to client
+// components. Read-only: these never call Sectors (see app/actions.ts).
 
 export const TICKER_RE = /^[A-Z]{4}$/;
 
@@ -52,6 +53,7 @@ export interface WatchRow {
   last: number | null;
   change: number | null;
   moves: MoveSummary[];
+  dataThrough: string | null;
   error?: string;
 }
 
@@ -69,9 +71,10 @@ export async function getWatchRows(tickers: string[]): Promise<WatchRow[]> {
         last: last?.close ?? null,
         change: last && prev ? last.close / prev.close - 1 : null,
         moves: scan.moves.map(summarize).reverse(),
+        dataThrough: last?.date ?? null,
       });
     } catch (e) {
-      rows.push({ ticker, prices: [], last: null, change: null, moves: [], error: errorMessage(e) });
+      rows.push({ ticker, prices: [], last: null, change: null, moves: [], dataThrough: null, error: errorMessage(e) });
     }
   }
   return rows;
@@ -82,6 +85,7 @@ export interface TickerView {
   prices: PricePoint[];
   moves: MoveSummary[];
   selected: string | null;
+  dataThrough: string | null;
   result: (InvestigationResult & { windows: number[] }) | null;
   error?: string;
 }
@@ -102,9 +106,10 @@ export async function getTickerView(ticker: string, date?: string): Promise<Tick
       prices: scan.bars.slice(-120).map((b) => ({ date: b.date, close: b.close })),
       moves: moves.map(summarize),
       selected: move?.date ?? null,
+      dataThrough: scan.bars.at(-1)?.date ?? null,
       result,
     };
   } catch (e) {
-    return { ticker, prices: [], moves: [], selected: null, result: null, error: errorMessage(e) };
+    return { ticker, prices: [], moves: [], selected: null, dataThrough: null, result: null, error: errorMessage(e) };
   }
 }

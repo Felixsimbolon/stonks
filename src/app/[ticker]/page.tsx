@@ -1,7 +1,9 @@
 import Link from "next/link";
+import { fetchEvidence, refreshTicker } from "@/app/actions";
 import { notFound } from "next/navigation";
 import { FadeIn } from "@/components/FadeIn";
-import { dirColor, pct, price } from "@/components/format";
+import { FetchButton } from "@/components/FetchButton";
+import { dirColor, pct, price, shortDate } from "@/components/format";
 import { Investigation } from "@/components/Investigation";
 import { MoveTabs } from "@/components/MoveTabs";
 import { PriceChart } from "@/components/PriceChart";
@@ -37,20 +39,32 @@ export default async function TickerPage({
         <FadeIn delay={0.05}>
           <h1 className="display text-8xl sm:text-9xl">{ticker}</h1>
         </FadeIn>
-        {last && (
-          <FadeIn delay={0.12} className="pb-3 text-right">
-            <div className="num text-3xl">{price(last.close)}</div>
-            {change !== null && (
-              <div className="num text-sm" style={{ color: dirColor(change) }}>
-                {pct(change)} <span className="text-faint">last session</span>
-              </div>
-            )}
-          </FadeIn>
-        )}
+        <FadeIn delay={0.12} className="pb-3 text-right">
+          {last && (
+            <>
+              <div className="num text-3xl">{price(last.close)}</div>
+              {change !== null && (
+                <div className="num text-sm" style={{ color: dirColor(change) }}>
+                  {pct(change)} <span className="text-faint">last session</span>
+                </div>
+              )}
+            </>
+          )}
+          <FetchButton
+            action={refreshTicker.bind(null, ticker)}
+            label="update prices"
+            hint={view.dataThrough ? `data through ${shortDate(view.dataThrough)}` : "nothing stored yet · ~6 credits"}
+            className="mt-4"
+          />
+        </FadeIn>
       </section>
 
       {view.error ? (
         <p className="mt-12 border-l border-down/60 pl-4 text-sm text-down">{view.error}</p>
+      ) : view.prices.length === 0 ? (
+        <p className="mt-16 max-w-xl text-muted">
+          No prices stored for {ticker} yet. Use <span className="text-ink">update prices</span> to fetch its history.
+        </p>
       ) : (
         <>
           <FadeIn delay={0.15} className="mt-10">
@@ -66,7 +80,11 @@ export default async function TickerPage({
               </section>
               {view.result && (
                 <section className="mt-16">
-                  <Investigation ticker={ticker} result={view.result} />
+                  <Investigation
+                    ticker={ticker}
+                    result={view.result}
+                    fetchEvidence={fetchEvidence.bind(null, ticker, view.result.investigation.move.date)}
+                  />
                 </section>
               )}
             </>

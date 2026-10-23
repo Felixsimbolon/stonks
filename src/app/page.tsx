@@ -1,6 +1,9 @@
+import { refreshAll } from "@/app/actions";
 import { AddTicker } from "@/components/AddTicker";
 import { CreditMeter } from "@/components/CreditMeter";
 import { FadeIn } from "@/components/FadeIn";
+import { FetchButton } from "@/components/FetchButton";
+import { shortDate } from "@/components/format";
 import { Watchlist } from "@/components/Watchlist";
 import { env } from "@/lib/env";
 import { getCredits, getWatchRows, listWatchlist } from "@/lib/views";
@@ -10,6 +13,7 @@ export const dynamic = "force-dynamic";
 export default async function Home() {
   const tickers = await listWatchlist();
   const [rows, credits] = await Promise.all([getWatchRows(tickers), getCredits()]);
+  const through = rows.map((r) => r.dataThrough).filter((d): d is string => d !== null).sort()[0];
 
   return (
     <main className="mx-auto max-w-6xl px-5 sm:px-8">
@@ -38,7 +42,15 @@ export default async function Home() {
           <div className="flex-1 sm:max-w-xl">
             <AddTicker existing={tickers} />
           </div>
-          <FadeIn delay={0.2}>
+          <FadeIn delay={0.2} className="flex flex-col gap-5 sm:items-end">
+            {rows.length > 0 && (
+              <FetchButton
+                action={refreshAll}
+                label="update prices"
+                hint={`${through ? `data through ${shortDate(through)}` : "no data yet"} · ~1 credit per ticker (+1 for IHSG) when a new session is out`}
+                className="sm:text-right"
+              />
+            )}
             <CreditMeter {...credits} />
           </FadeIn>
         </div>
