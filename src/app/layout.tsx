@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist, Geist_Mono, Instrument_Serif } from "next/font/google";
+import Link from "next/link";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -10,6 +11,13 @@ const geistSans = Geist({
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
+});
+
+const display = Instrument_Serif({
+  variable: "--font-display",
+  subsets: ["latin"],
+  weight: "400",
+  style: ["normal", "italic"],
 });
 
 export const metadata: Metadata = {
@@ -25,10 +33,24 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+      <body className={`${geistSans.variable} ${geistMono.variable} ${display.variable} antialiased`}>
+        <div className="atmosphere" aria-hidden />
+        <div className="vignette" aria-hidden />
+
+        <header className="mx-auto flex max-w-6xl items-baseline justify-between px-5 pt-8 sm:px-8">
+          <Link href="/" className="display text-3xl italic tracking-tight">
+            stonks<span className="text-stock">.</span>
+          </Link>
+          <span className="eyebrow hidden sm:inline">evidence-first · IDX</span>
+        </header>
+
         {children}
-        <footer className="mx-auto max-w-4xl px-4 py-8 text-xs opacity-60">
-          Information tool only — not financial advice. No trades are executed. Data: Sectors.
+
+        <footer className="mx-auto max-w-6xl px-5 pb-10 pt-24 sm:px-8">
+          <div className="hairline mb-6" />
+          <p className="text-xs leading-relaxed text-faint">
+            An information tool, not financial advice. Stonks never places trades. Market data from Sectors.
+          </p>
         </footer>
       </body>
     </html>

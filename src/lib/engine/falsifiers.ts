@@ -35,7 +35,7 @@ export interface FalsifierEvaluation {
   triggeredOn?: string;
 }
 
-function windowOf(rule: FalsifierRule): number {
+export function windowOf(rule: FalsifierRule): number {
   return "all" in rule ? Math.max(...rule.all.map(windowOf)) : rule.window;
 }
 
