@@ -33,7 +33,11 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${geistSans.variable} ${geistMono.variable} ${display.variable} antialiased`}>
+      {/* suppressHydrationWarning: browser extensions (e.g. Grammarly) add attributes to <body> before React hydrates */}
+      <body
+        className={`${geistSans.variable} ${geistMono.variable} ${display.variable} antialiased`}
+        suppressHydrationWarning
+      >
         <div className="atmosphere" aria-hidden />
         <div className="vignette" aria-hidden />
 
