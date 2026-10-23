@@ -20,7 +20,7 @@ export interface Move {
   marketRet: number; // index return on the same day
   beta: number; // estimated vs. the index over the lookback window
   abnormalRet: number; // ret - beta * marketRet
-  residualStd: number; // std of daily abnormal returns over the lookback
+  residualStd: number; // robust (MAD-based) std of daily abnormal returns over the lookback
   abnormalZ: number; // abnormalRet / residualStd
   volumeRatio: number; // volume / avg volume of the prior window
   volumeZ: number;
@@ -36,7 +36,27 @@ export type HypothesisType =
   | "liquidity"
   | "noise";
 
-export type Verdict = "supported" | "partial" | "weak" | "refuted" | "untested";
+// "not_needed": market + sector already explain the move, so there is no
+// stock-specific part left for this explanation to account for.
+export type Verdict = "supported" | "partial" | "weak" | "refuted" | "untested" | "not_needed";
+
+/**
+ * The move split into additive parts: total = market + sector + stockSpecific.
+ * `shares` are each part's portion of the move in the move's direction and
+ * sum to 1 (parts pushing the other way get 0).
+ */
+export interface Decomposition {
+  total: number;
+  market: number; // beta × index return
+  sector: number | null; // median beta-adjusted peer return; null with too few peers
+  stockSpecific: number;
+  shares: { market: number; sector: number; stockSpecific: number };
+  peerCount: number;
+  breadth: number | null; // share of peers whose beta-adjusted return had the move's sign
+  stockSpecificStd: number; // robust std of the daily stock-specific part, pre-move
+  stockSpecificZ: number;
+  relativeVolume: number | null; // stock volume ratio / median peer volume ratio
+}
 
 export interface Evidence {
   id: string; // stable within an investigation, e.g. "E3"
@@ -58,7 +78,9 @@ export interface InvestigationInput {
   move: Move;
   bars: Bar[]; // the stock, ascending by date
   marketBars: Bar[]; // the index (IHSG), ascending by date
-  peers: Record<string, Bar[]>; // same-subsector companies
+  // Same-subsector companies. Give them the same history as `bars` so their
+  // betas (and the stock-specific volatility) can be estimated.
+  peers: Record<string, Bar[]>;
   // undefined = the data was not available, so event-based hypotheses are
   // "untested" rather than "refuted".
   events?: CompanyEvent[];
@@ -84,6 +106,7 @@ export interface HypothesisResult {
 export interface Investigation {
   ticker: string;
   move: Move;
+  decomposition: Decomposition;
   evidence: Evidence[];
   hypotheses: HypothesisResult[]; // ranked, best first
 }

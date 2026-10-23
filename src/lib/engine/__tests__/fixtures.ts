@@ -50,10 +50,10 @@ export interface Scenario {
   }) => Bar[];
 }
 
-export function scenario(n = 160, seed = 42): Scenario {
+export function scenario(n = 160, seed = 42, marketShocks: Record<string, number> = {}): Scenario {
   const rand = rng(seed);
   const dates = tradingDates(n);
-  const marketReturns = dates.map((_, i) => (i === 0 ? 0 : 0.008 * normal(rand)));
+  const marketReturns = dates.map((d, i) => (i === 0 ? 0 : 0.008 * normal(rand) + (marketShocks[d] ?? 0)));
   const market = barsFromReturns(dates, marketReturns, dates.map(() => 1e9));
   return {
     dates,

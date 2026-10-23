@@ -24,6 +24,26 @@ export function median(xs: number[]): number {
   return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
 }
 
+/**
+ * Standard deviation estimated from the median absolute deviation. Unlike
+ * std(), a few crash days in the sample barely move it, so thresholds stay
+ * meaningful right after a volatile stretch.
+ */
+export function robustStd(xs: number[]): number {
+  if (xs.length < 2) return NaN;
+  const m = median(xs);
+  const mad = median(xs.map((x) => Math.abs(x - m)));
+  return mad > 0 ? 1.4826 * mad : std(xs);
+}
+
+/** Volume on bars[idx] relative to the mean of the `window` bars before it. */
+export function volumeRatioAt(bars: Bar[], idx: number, window: number): number | null {
+  if (idx < 1) return null;
+  const prior = bars.slice(Math.max(0, idx - window), idx).map((b) => b.volume);
+  const avg = mean(prior);
+  return avg > 0 ? bars[idx].volume / avg : null;
+}
+
 export function zscore(x: number, sample: number[]): number {
   const sd = std(sample);
   if (!Number.isFinite(sd) || sd === 0) return 0;

@@ -36,7 +36,13 @@ async function main() {
     console.log(
       `${inv.ticker}  ${pct(move.ret)} on ${move.date}   abnormal ${pct(move.abnormalRet)} (${move.abnormalZ.toFixed(1)}σ)   β ${move.beta.toFixed(2)}   vol ${move.volumeRatio.toFixed(1)}×`,
     );
-    console.log(`subsector: ${r.subSector ?? "?"} (${r.peerCount} peers)\n`);
+    const d = inv.decomposition;
+    const sh = (x: number) => `${Math.round(x * 100)}%`;
+    console.log(`subsector: ${r.subSector ?? "?"} (${r.peerCount} peers)`);
+    console.log(
+      `split: market ${pct(d.market)} (${sh(d.shares.market)}) · sector ${d.sector === null ? "n/a" : pct(d.sector)} (${sh(d.shares.sector)}) · stock-specific ${pct(d.stockSpecific)} (${sh(d.shares.stockSpecific)}, ${d.stockSpecificZ.toFixed(1)}σ)` +
+        (d.relativeVolume === null ? "" : ` · volume ${d.relativeVolume.toFixed(1)}× peers`) + "\n",
+    );
     for (const h of inv.hypotheses) {
       console.log(`  ${h.type.padEnd(16)} ${h.verdict.toUpperCase().padEnd(10)} ${h.score.toFixed(2)}  ${h.rationale}  [${h.evidenceIds.join(",")}]`);
     }

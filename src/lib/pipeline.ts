@@ -24,6 +24,7 @@ import {
 // purpose: the credit check is per call, and SQLite prefers one writer.
 
 export const MARKET_INDEX = "ihsg";
+const PEER_HISTORY_DAYS = 180;
 
 export interface ScanResult {
   ticker: string;
@@ -52,11 +53,14 @@ export async function investigateMove(scan: ScanResult, move: Move): Promise<Inv
   const { ticker, bars, market } = scan;
   const to = todayWib();
 
+  // ~120 trading days before the move, so peer betas and the stock-specific
+  // volatility can be estimated. Stored bars are reused across moves and runs.
+  const peerFrom = addDays(move.date, -PEER_HISTORY_DAYS);
   const { subSector, peers: peerTickers } = await getPeers(ticker);
   const peers: Record<string, Bar[]> = {};
   for (const p of peerTickers) {
     try {
-      peers[p] = await getDailyBars(p, addDays(move.date, -10), to);
+      peers[p] = await getDailyBars(p, peerFrom, to);
     } catch (e) {
       if (e instanceof SectorsError && e.status === 404) continue; // delisted / renamed peer
       throw e;
@@ -81,7 +85,7 @@ export async function investigateMove(scan: ScanResult, move: Move): Promise<Inv
     },
   });
 
-  const falsifiers = falsifiersFor(move, investigation.hypotheses).map((f) => ({
+  const falsifiers = falsifiersFor(investigation).map((f) => ({
     ...f,
     evaluation: evaluateFalsifier(f.rule, { move, bars, marketBars: market, peers }),
   }));

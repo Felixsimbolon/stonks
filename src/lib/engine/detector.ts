@@ -1,4 +1,4 @@
-import { align, dailyReturns, mean, ols, std, zscore } from "./stats";
+import { align, dailyReturns, ols, robustStd, volumeRatioAt, zscore } from "./stats";
 import type { Bar, Move, MoveTrigger } from "./types";
 
 export interface DetectorOptions {
@@ -43,13 +43,12 @@ export function measureMove(
     history.map((p) => p.b),
     history.map((p) => p.a),
   );
-  const residualStd = std(fit.residuals);
+  const residualStd = robustStd(fit.residuals);
   const abnormalRet = dayPair.a - fit.beta * dayPair.b;
   const abnormalZ = residualStd > 0 ? abnormalRet / residualStd : 0;
 
   const priorVolumes = bars.slice(Math.max(0, idx - opts.volumeWindow), idx).map((b) => b.volume);
-  const avgVolume = mean(priorVolumes);
-  const volumeRatio = avgVolume > 0 ? bars[idx].volume / avgVolume : 0;
+  const volumeRatio = volumeRatioAt(bars, idx, opts.volumeWindow) ?? 0;
   const volumeZ = zscore(bars[idx].volume, priorVolumes);
 
   const gap = bars[idx].open / bars[idx - 1].close - 1;

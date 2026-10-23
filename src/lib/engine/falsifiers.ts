@@ -1,5 +1,5 @@
 import { dailyReturns, median } from "./stats";
-import type { Bar, HypothesisResult, HypothesisType, Move } from "./types";
+import type { Bar, HypothesisResult, HypothesisType, Investigation, Move } from "./types";
 
 // A tiny, deterministic rule language for "what would prove this story wrong".
 // Rules are stored as JSON and re-evaluated every day after the market closes.
@@ -101,10 +101,15 @@ export function evaluateFalsifier(rule: FalsifierRule, data: PostMoveData): Fals
   return { status: observable >= window ? "survived" : "pending", daysObserved: observable };
 }
 
-/** Default falsifiers per hypothesis type, parameterized by the move itself. */
-export function defaultFalsifiers(move: Move, hypothesis: HypothesisResult): Falsifier[] {
+/**
+ * Default falsifiers per hypothesis type, parameterized by the move itself.
+ * Thresholds are 2σ over the window, using robust σ so a volatile stretch
+ * before the move does not make them unreachable.
+ */
+export function defaultFalsifiers({ move, decomposition }: Investigation, hypothesis: HypothesisResult): Falsifier[] {
   const dir = Math.sign(move.ret) || 1;
   const drift = (days: number) => 2 * move.residualStd * Math.sqrt(days);
+  const stockDrift = (days: number) => 2 * decomposition.stockSpecificStd * Math.sqrt(days);
   const pct = (x: number) => `${(x * 100).toFixed(1)}%`;
 
   switch (hypothesis.type) {
@@ -115,7 +120,7 @@ export function defaultFalsifiers(move: Move, hypothesis: HypothesisResult): Fal
         rule: { metric: "cum_abnormal_return", window: 5, op: "abs>", value: drift(5) },
       }];
     case "sector_rotation": {
-      const gap = Math.max(0.03, drift(5));
+      const gap = Math.max(0.03, stockDrift(5));
       return [{
         hypothesisType: "sector_rotation",
         description: `The stock decouples from its subsector: return gap vs peer median beyond ±${pct(gap)} within 5 trading days.`,
@@ -154,8 +159,8 @@ export function defaultFalsifiers(move: Move, hypothesis: HypothesisResult): Fal
 }
 
 /** Falsifiers for every hypothesis that is still standing. */
-export function falsifiersFor(move: Move, hypotheses: HypothesisResult[]): Falsifier[] {
-  return hypotheses
-    .filter((h) => h.verdict !== "refuted" && h.verdict !== "untested")
-    .flatMap((h) => defaultFalsifiers(move, h));
+export function falsifiersFor(investigation: Investigation): Falsifier[] {
+  return investigation.hypotheses
+    .filter((h) => h.verdict !== "refuted" && h.verdict !== "untested" && h.verdict !== "not_needed")
+    .flatMap((h) => defaultFalsifiers(investigation, h));
 }
