@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { integer, primaryKey, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { integer, primaryKey, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 const createdAt = () => text("created_at").notNull().default(sql`(datetime('now'))`);
 
@@ -64,32 +64,65 @@ export const apiCalls = sqliteTable("api_calls", {
   at: createdAt(),
 });
 
-export const moves = sqliteTable("moves", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  ticker: text("ticker").notNull(),
-  date: text("date").notNull(),
-  data: text("data", { mode: "json" }).notNull(), // engine Move
-  createdAt: createdAt(),
-});
+// ── Case files ───────────────────────────────────────────────────────────
+// An investigation frozen at filing time, then followed: its falsifiers are
+// re-checked against later sessions until each one breaks or survives.
 
+export const moves = sqliteTable(
+  "moves",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    ticker: text("ticker").notNull(),
+    date: text("date").notNull(),
+    data: text("data", { mode: "json" }).notNull(), // engine Move, frozen at filing
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("moves_ticker_date").on(t.ticker, t.date)],
+);
+
+/** One case file per move. */
 export const investigations = sqliteTable("investigations", {
   id: integer("id").primaryKey({ autoIncrement: true }),
-  moveId: integer("move_id").notNull().references(() => moves.id),
+  moveId: integer("move_id")
+    .notNull()
+    .unique()
+    .references(() => moves.id),
+  status: text("status", { enum: ["open", "closed"] }).notNull().default("open"),
+  decomposition: text("decomposition", { mode: "json" }).notNull(), // engine Decomposition
   evidence: text("evidence", { mode: "json" }).notNull(), // engine Evidence[]
   hypotheses: text("hypotheses", { mode: "json" }).notNull(), // engine HypothesisResult[]
   summaryMd: text("summary_md"), // LLM narration, optional
+  filedOn: text("filed_on").notNull(), // WIB date the case was filed
+  closedOn: text("closed_on"), // market date of the last resolved falsifier
   createdAt: createdAt(),
 });
 
 export const falsifiers = sqliteTable("falsifiers", {
   id: integer("id").primaryKey({ autoIncrement: true }),
-  investigationId: integer("investigation_id").notNull().references(() => investigations.id),
+  investigationId: integer("investigation_id")
+    .notNull()
+    .references(() => investigations.id, { onDelete: "cascade" }),
   hypothesisType: text("hypothesis_type").notNull(),
   description: text("description").notNull(),
   rule: text("rule", { mode: "json" }).notNull(), // engine FalsifierRule
+  window: integer("window").notNull(),
   status: text("status", { enum: ["pending", "triggered", "survived"] }).notNull().default("pending"),
+  daysObserved: integer("days_observed").notNull().default(0),
   triggeredOn: text("triggered_on"),
   checkedAt: text("checked_at"),
+});
+
+/** Timeline of a case, dated by market date. */
+export const caseEvents = sqliteTable("case_events", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  investigationId: integer("investigation_id")
+    .notNull()
+    .references(() => investigations.id, { onDelete: "cascade" }),
+  date: text("date").notNull(),
+  kind: text("kind", { enum: ["move", "falsifier_broke", "falsifier_held", "closed", "refiled"] }).notNull(),
+  hypothesisType: text("hypothesis_type"),
+  message: text("message").notNull(),
+  createdAt: createdAt(),
 });
 
 export const alerts = sqliteTable("alerts", {
