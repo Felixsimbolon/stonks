@@ -11,7 +11,11 @@ const schema = z.object({
   SECTORS_API_BASE: z.string().url().default("https://api.sectors.app/v2"),
   SECTORS_CREDIT_LIMIT: z.coerce.number().int().positive().default(1000),
 
-  ANTHROPIC_API_KEY: z.string().optional(),
+  ANTHROPIC_API_KEY: z.string().trim().optional(),
+  // Claude model for summaries and chat. Opus 5.5 by default; Sonnet/Haiku are cheaper.
+  LLM_MODEL: z.string().default("claude-opus-5-5"),
+  // Hard daily cap on Claude tokens (input + output, cache reads excluded) across summaries and chat.
+  LLM_DAILY_TOKEN_LIMIT: z.coerce.number().int().positive().default(500_000),
   TELEGRAM_BOT_TOKEN: z.string().optional(),
   TELEGRAM_CHAT_ID: z.string().optional(),
 });

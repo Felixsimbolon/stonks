@@ -126,6 +126,31 @@ export const caseEvents = sqliteTable("case_events", {
   createdAt: createdAt(),
 });
 
+// ── LLM ──────────────────────────────────────────────────────────────────
+
+/** One row per Claude API call, for the daily token cap and the usage readout. */
+export const llmCalls = sqliteTable("llm_calls", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  kind: text("kind", { enum: ["summary", "chat"] }).notNull(),
+  model: text("model").notNull(),
+  inputTokens: integer("input_tokens").notNull().default(0),
+  outputTokens: integer("output_tokens").notNull().default(0),
+  cacheReadTokens: integer("cache_read_tokens").notNull().default(0),
+  cacheWriteTokens: integer("cache_write_tokens").notNull().default(0),
+  day: text("day").notNull(), // WIB date, for the daily cap
+  at: createdAt(),
+});
+
+/** The latest verified AI summary per ticker. */
+export const summaries = sqliteTable("summaries", {
+  ticker: text("ticker").primaryKey(),
+  payload: text("payload", { mode: "json" }).notNull(), // StockSummary
+  facts: text("facts", { mode: "json" }).notNull(), // the Fact[] it was written from
+  dataThrough: text("data_through"), // latest session in the facts, for staleness
+  model: text("model").notNull(),
+  generatedAt: integer("generated_at", { mode: "timestamp_ms" }).notNull(),
+});
+
 export const alerts = sqliteTable("alerts", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   kind: text("kind", { enum: ["move", "falsifier"] }).notNull(),
