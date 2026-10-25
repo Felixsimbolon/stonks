@@ -6,6 +6,7 @@ import type { Evidence, HypothesisResult, HypothesisType, Verdict } from "@/lib/
 import type { FetchResult } from "@/app/actions";
 import type { TickerView } from "@/lib/views";
 import { CaseFile } from "./CaseFile";
+import { LineChart } from "./charts/LineChart";
 import { FetchButton } from "./FetchButton";
 import { dirColor, pct, shortDate, share, sigma } from "./format";
 
@@ -33,10 +34,11 @@ const VERDICT_STYLE: Record<Verdict, { label: string; color: string }> = {
   untested: { label: "no data to test", color: "var(--faint)" },
 };
 
+// Validated chart colors (see globals.css --c-*), shared with the ticker charts.
 const PARTS = [
-  { key: "market", label: "Market", color: "var(--market)" },
-  { key: "sector", label: "Sector", color: "var(--sector)" },
-  { key: "stockSpecific", label: "Stock-specific", color: "var(--stock)" },
+  { key: "market", label: "Market", color: "var(--c-market)" },
+  { key: "sector", label: "Sector", color: "var(--c-sector)" },
+  { key: "stockSpecific", label: "Stock-specific", color: "var(--c-stock)" },
 ] as const;
 type PartKey = (typeof PARTS)[number]["key"];
 
@@ -81,24 +83,19 @@ function SplitBar({ r, focus, setFocus }: { r: Result; focus: PartKey | null; se
 
   return (
     <div>
-      <div className="flex h-3 w-full">
-        {PARTS.map((p, i) => (
+      {/* stacked bar: 2px surface gap between parts, square start, 4px rounded end */}
+      <div className="flex h-3 w-full gap-[2px]">
+        {PARTS.filter((p) => d.shares[p.key] > 0).map((p, i, shown) => (
           <motion.div
             key={p.key}
-            className="h-full cursor-pointer px-0.5 first:pl-0 last:pr-0"
-            initial={{ width: "0%" }}
-            animate={{ width: `${d.shares[p.key] * 100}%`, opacity: focus === null || focus === p.key ? 1 : 0.25 }}
-            transition={{ width: { delay: 0.2 + i * 0.12, duration: 0.9, ease }, opacity: { duration: 0.2 } }}
+            className="h-full cursor-pointer"
+            style={{ background: p.color, borderRadius: i === shown.length - 1 ? "0 4px 4px 0" : 0 }}
+            initial={{ flexBasis: "0%" }}
+            animate={{ flexBasis: `${d.shares[p.key] * 100}%`, opacity: focus === null || focus === p.key ? 1 : 0.3 }}
+            transition={{ flexBasis: { delay: 0.2 + i * 0.12, duration: 0.9, ease }, opacity: { duration: 0.2 } }}
             onPointerEnter={() => setFocus(p.key)}
             onPointerLeave={() => setFocus(null)}
-          >
-            {d.shares[p.key] > 0 && (
-              <div
-                className="h-full w-full rounded-full"
-                style={{ background: `linear-gradient(90deg, ${p.color}, color-mix(in oklab, ${p.color} 55%, white))` }}
-              />
-            )}
-          </motion.div>
+          />
         ))}
       </div>
 
@@ -116,10 +113,11 @@ function SplitBar({ r, focus, setFocus }: { r: Result; focus: PartKey | null; se
               onPointerEnter={() => setFocus(p.key)}
               onPointerLeave={() => setFocus(null)}
             >
-              <div className="eyebrow" style={{ color: p.color }}>
+              <div className="eyebrow flex items-center gap-2">
+                <span className="block h-2.5 w-2.5 rounded-[3px]" style={{ background: p.color }} />
                 {p.label}
               </div>
-              <div className="display mt-2 text-4xl sm:text-5xl">{share(d.shares[p.key])}</div>
+              <div className="mt-2 text-4xl font-semibold tracking-tight sm:text-5xl">{share(d.shares[p.key])}</div>
               <div className="num mt-1 text-sm text-muted">
                 {v === null ? "too few peers" : pct(v)}
                 {against && <span className="text-faint"> · pushed the other way</span>}
@@ -176,6 +174,34 @@ function FalsifierLine({ f, window }: { f: Result["falsifiers"][number]; window:
           {status}
         </span>
       </div>
+      {f.path && f.path.dates.length > 0 && <FalsifierPathChart path={f.path} />}
+    </div>
+  );
+}
+
+type Path = NonNullable<Result["falsifiers"][number]["path"]>;
+
+const METRIC: Record<Path["metric"], { label: string; format: (v: number) => string }> = {
+  cum_abnormal_return: { label: "beta-adjusted return since the move", format: (v) => pct(v, 1) },
+  spread_vs_peer_median: { label: "gap vs peer median since the move", format: (v) => pct(v, 1) },
+  retracement: { label: "share of the move given back", format: (v) => `${Math.round(v * 100)}%` },
+  avg_volume_ratio: { label: "volume vs pre-move average", format: (v) => `${v.toFixed(1)}×` },
+  foreign_flow_ratio: { label: "foreign flow since, vs move-day flow", format: (v) => `${v.toFixed(1)}×` },
+};
+
+/** The falsifier metric session by session, against the line that would break the story. */
+function FalsifierPathChart({ path }: { path: Path }) {
+  const m = METRIC[path.metric];
+  return (
+    <div className="mt-3 max-w-md">
+      <p className="mb-1 text-[11px] text-faint">{m.label} · dashed: breaking point</p>
+      <LineChart
+        height={110}
+        xs={path.dates.map(shortDate)}
+        format={m.format}
+        series={[{ key: path.metric, label: m.label, color: "var(--c-series)", values: path.values }]}
+        thresholds={path.thresholds.map((v) => ({ value: v, label: m.format(v) }))}
+      />
     </div>
   );
 }
@@ -322,7 +348,7 @@ export function Investigation({
             </span>
           ) : (
             <span className="text-muted">
-              <em style={{ color: h.lead.color }}>{h.lead.label}</em> accounts for {share(r.investigation.decomposition.shares[h.lead.key])}{" "}
+              <em className="text-ink">{h.lead.label}</em> accounts for {share(r.investigation.decomposition.shares[h.lead.key])}{" "}
               of it.
             </span>
           )}

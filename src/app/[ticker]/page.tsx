@@ -14,6 +14,7 @@ import { dirColor, pct, price, shortDate } from "@/components/format";
 import { Investigation } from "@/components/Investigation";
 import { MoveTabs } from "@/components/MoveTabs";
 import { PriceChart } from "@/components/PriceChart";
+import { DriversChart, FlowChart, VolumeChart } from "@/components/TickerCharts";
 import { TICKER_RE, getTickerView } from "@/lib/views";
 
 export const dynamic = "force-dynamic";
@@ -77,6 +78,23 @@ export default async function TickerPage({
           <FadeIn delay={0.15} className="mt-10">
             <PriceChart ticker={ticker} prices={view.prices} moves={view.moves} selected={view.selected} />
           </FadeIn>
+
+          <FadeIn delay={0.25} className="mt-10">
+            <VolumeChart ticker={ticker} volumes={view.volumes} selected={view.selected} />
+          </FadeIn>
+
+          {(view.drivers.length > 0 || (view.flows && view.flows.length > 0)) && (
+            <div className="mt-14 grid gap-14 lg:grid-cols-2">
+              <FadeIn delay={0.3}>
+                <DriversChart ticker={ticker} drivers={view.drivers} />
+              </FadeIn>
+              {view.flows && view.flows.length > 0 && (
+                <FadeIn delay={0.35}>
+                  <FlowChart flows={view.flows} />
+                </FadeIn>
+              )}
+            </div>
+          )}
 
           {view.moves.length > 0 ? (
             <>
