@@ -1,5 +1,12 @@
 import Link from "next/link";
-import { checkCasesAction, fetchEvidence, fileCaseAction, refreshTicker } from "@/app/actions";
+import {
+  checkCasesAction,
+  fetchAssetBackingAction,
+  fetchEvidence,
+  fileCaseAction,
+  refreshTicker,
+} from "@/app/actions";
+import { AssetBacking } from "@/components/mining/AssetBacking";
 import { notFound } from "next/navigation";
 import { FadeIn } from "@/components/FadeIn";
 import { FetchButton } from "@/components/FetchButton";
@@ -101,6 +108,18 @@ export default async function TickerPage({
             </FadeIn>
           )}
         </>
+      )}
+
+      {view.assetBacking && (
+        <section className="mt-24">
+          <div className="hairline mb-10" />
+          <p className="eyebrow mb-8">what&apos;s underneath · mining assets</p>
+          <AssetBacking
+            ticker={ticker}
+            view={view.assetBacking}
+            fetchAction={fetchAssetBackingAction.bind(null, ticker)}
+          />
+        </section>
       )}
     </main>
   );

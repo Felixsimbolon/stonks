@@ -52,6 +52,9 @@ export default function RootLayout({
             <Link href="/cases" className="eyebrow transition-colors hover:text-ink">
               case files
             </Link>
+            <Link href="/mining" className="eyebrow transition-colors hover:text-ink">
+              mining
+            </Link>
           </nav>
         </header>
 

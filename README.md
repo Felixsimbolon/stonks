@@ -17,6 +17,11 @@ explanation holds, and know what would prove it wrong.
    sessions arrive, and close it when each one breaks or survives. Closed cases build the engine's
    track record: how often each kind of explanation actually held (`/cases`).
 
+**Mining asset backing** (`/mining` and mining ticker pages): what physically backs coal and
+mineral issuers, from Sectors' mining extension. Reserve life and replacement, license runway,
+market cap per ton of reserves, and a coal cost curve (cost of revenue per ton sold for the nine
+issuers with mining financials) against a draggable coal benchmark.
+
 Every number comes from code in [`src/lib/engine`](src/lib/engine), never from an LLM.
 
 **Sectors is only called when you click.** Pages read the local store. Use *update prices* (new sessions since the last update) or *fetch evidence* (peers + corporate actions for a move). Daily bars are fetched once and kept; a session counts as published after 18:00 WIB; peers are re-fetched after 30 days and corporate actions after 7.
