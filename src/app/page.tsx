@@ -5,7 +5,9 @@ import { CreditMeter } from "@/components/CreditMeter";
 import { FadeIn } from "@/components/FadeIn";
 import { FetchButton } from "@/components/FetchButton";
 import { shortDate } from "@/components/format";
+import { KpiRow, StatTile } from "@/components/charts/kit";
 import { Watchlist } from "@/components/Watchlist";
+import { WatchTimeline } from "@/components/WatchTimeline";
 import { env } from "@/lib/env";
 import { countOpenCases, getCredits, getWatchRows, listWatchlist } from "@/lib/views";
 
@@ -61,9 +63,35 @@ export default async function Home() {
           </FadeIn>
         </div>
 
+        {rows.length > 0 && (
+          <div className="mb-12">
+            <KpiRow>
+              <StatTile label="Watching" value={String(rows.length)} note={through ? `data through ${shortDate(through)}` : undefined} />
+              <StatTile
+                label="Unusual moves, last 20 sessions"
+                value={String(rows.reduce((a, r) => a + r.moves.length, 0))}
+                note={`${rows.filter((r) => r.moves.length > 0).length} of ${rows.length} tickers`}
+                delay={0.05}
+              />
+              <StatTile label="Open case files" value={String(openCases)} note="followed until they hold or break" delay={0.1} />
+              <StatTile
+                label="Sectors credits used"
+                value={String(credits.used)}
+                note={`${Math.max(0, credits.limit - credits.used)} left of ${credits.limit}`}
+                delay={0.15}
+              />
+            </KpiRow>
+          </div>
+        )}
+
         <div className="hairline" />
         {rows.length > 0 ? (
-          <Watchlist rows={rows} />
+          <>
+            <Watchlist rows={rows} />
+            <FadeIn delay={0.4} className="mt-16">
+              <WatchTimeline rows={rows} />
+            </FadeIn>
+          </>
         ) : (
           <FadeIn delay={0.3}>
             <p className="py-16 text-muted">

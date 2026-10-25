@@ -1,5 +1,6 @@
 import { checkCasesAction } from "@/app/actions";
 import { CaseList } from "@/components/CaseList";
+import { KpiRow, StatTile } from "@/components/charts/kit";
 import { FadeIn } from "@/components/FadeIn";
 import { FetchButton } from "@/components/FetchButton";
 import { TrackRecord } from "@/components/TrackRecord";
@@ -41,6 +42,22 @@ export default async function CasesPage() {
           />
         </FadeIn>
       </section>
+
+      {cases.length > 0 && (
+        <section className="mb-16">
+          <KpiRow>
+            <StatTile label="Case files" value={String(cases.length)} />
+            <StatTile label="Open" value={String(open.length)} note="still being followed" delay={0.05} />
+            <StatTile label="Closed" value={String(closed.length)} note="every condition resolved" delay={0.1} />
+            <StatTile
+              label="“Holds” calls that held"
+              value={headline.filed ? `${Math.round((headline.held / headline.filed) * 100)}%` : "—"}
+              note={headline.filed ? `${headline.held} of ${headline.filed} closed` : "no closed “holds” calls yet"}
+              delay={0.15}
+            />
+          </KpiRow>
+        </section>
+      )}
 
       <section>
         <p className="eyebrow mb-6">track record</p>
