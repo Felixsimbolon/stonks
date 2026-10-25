@@ -14,6 +14,24 @@
 
   --up: #6fdcc0;
   --down: #ff7a7a;
+
+  /* ── Chart data colors (validated: dataviz validate_palette.js, dark, surface #0b0a10) ──
+     The three parts of a move: adjacent CVD ΔE ≥ 9.4, normal-vision ≥ 26.5, all ≥ 3:1. */
+  --c-market: #3987e5;
+  --c-sector: #d95926;
+  --c-stock: #199e70;
+  /* Polarity (net buy/sell, below/above a price): blue ↔ red, gray midpoint. CVD ΔE 19.2. */
+  --c-pos: #3987e5;
+  --c-neg: #e66767;
+  --c-mid: #383835;
+  /* One series = one color; emphasis = accent vs de-emphasis gray. */
+  --c-series: #3987e5;
+  --c-dim: #4a4945;
+  /* Chrome: solid hairline grid, axis, muted axis text. */
+  --c-grid: #2c2c2a;
+  --c-axis: #383835;
+  --c-ink-muted: #898781;
+  --c-surface: #0b0a10; /* ring/gap color around marks */
 }
 
 @theme inline {
@@ -27,6 +45,12 @@
   --color-stock: var(--stock);
   --color-up: var(--up);
   --color-down: var(--down);
+  --color-c-market: var(--c-market);
+  --color-c-sector: var(--c-sector);
+  --color-c-stock: var(--c-stock);
+  --color-c-pos: var(--c-pos);
+  --color-c-neg: var(--c-neg);
+  --color-c-grid: var(--c-grid);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
   --font-display: var(--font-display);
