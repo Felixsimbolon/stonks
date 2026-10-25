@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono, Instrument_Serif } from "next/font/google";
 import Link from "next/link";
+import { AskPanel } from "@/components/AskPanel";
+import { llmConfigured } from "@/lib/llm/client";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -59,6 +61,7 @@ export default function RootLayout({
         </header>
 
         {children}
+        <AskPanel configured={llmConfigured()} />
 
         <footer className="mx-auto max-w-6xl px-5 pb-10 pt-24 sm:px-8">
           <div className="hairline mb-6" />

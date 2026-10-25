@@ -4,8 +4,10 @@ import {
   fetchAssetBackingAction,
   fetchEvidence,
   fileCaseAction,
+  generateSummaryAction,
   refreshTicker,
 } from "@/app/actions";
+import { AiSummary } from "@/components/AiSummary";
 import { AssetBacking } from "@/components/mining/AssetBacking";
 import { notFound } from "next/navigation";
 import { FadeIn } from "@/components/FadeIn";
@@ -66,6 +68,19 @@ export default async function TickerPage({
           />
         </FadeIn>
       </section>
+
+      {!view.error && view.prices.length > 0 && (
+        <FadeIn delay={0.18} className="mt-14">
+          <p className="eyebrow mb-5">ai summary</p>
+          <AiSummary
+            ticker={ticker}
+            stored={view.summary}
+            dataThrough={view.dataThrough}
+            llm={view.llm}
+            generate={generateSummaryAction.bind(null, ticker)}
+          />
+        </FadeIn>
+      )}
 
       {view.error ? (
         <p className="mt-12 border-l border-down/60 pl-4 text-sm text-down">{view.error}</p>

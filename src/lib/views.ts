@@ -5,6 +5,8 @@ import { db, schema } from "@/lib/db";
 import { env } from "@/lib/env";
 import { decompose, windowOf, type Bar, type FlowPoint, type HypothesisType, type Move } from "@/lib/engine";
 import { investigateMove, scanTicker, type InvestigationResult } from "@/lib/pipeline";
+import { llmUsage, type LlmUsage } from "@/lib/llm/client";
+import { getSummary, type StoredSummary } from "@/lib/llm/store";
 import { getAssetBacking, loadCostCurve, type AssetBackingView, type CostCurveView } from "@/lib/mining/service";
 import {
   addDays,
@@ -165,6 +167,9 @@ export interface TickerView {
   flows: FlowPoint[] | null;
   /** What drove each flagged move. */
   drivers: MoveDriver[];
+  /** The stored AI summary, if one was generated. */
+  summary: StoredSummary | null;
+  llm: LlmUsage;
   error?: string;
 }
 
@@ -222,6 +227,8 @@ export async function getTickerView(ticker: string, date?: string): Promise<Tick
       caseFile,
       trackNotes,
       assetBacking: await assetBackingFor(ticker),
+      summary: await getSummary(ticker),
+      llm: await llmUsage(),
     };
   } catch (e) {
     return {
@@ -237,6 +244,8 @@ export async function getTickerView(ticker: string, date?: string): Promise<Tick
       volumes: [],
       flows: null,
       drivers: [],
+      summary: null,
+      llm: await llmUsage(),
       error: errorMessage(e),
     };
   }

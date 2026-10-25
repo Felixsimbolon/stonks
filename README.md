@@ -22,6 +22,13 @@ mineral issuers, from Sectors' mining extension. Reserve life and replacement, l
 market cap per ton of reserves, and a coal cost curve (cost of revenue per ton sold for the nine
 issuers with mining financials) against a draggable coal benchmark.
 
+**AI summaries and Ask Stonks** (optional, needs `ANTHROPIC_API_KEY`): Claude writes a stock's
+summary only from numbered facts the engine computes, and answers questions through read-only
+tools over the local store. Our own guardrails sit around the model: every number in a summary
+must appear in the facts it cites, uncited or advice-like parts are dropped, a finished chat
+answer that reads as a buy/sell call, price target or prediction is withheld, and a daily token
+cap (`LLM_DAILY_TOKEN_LIMIT`) bounds spend. Nothing calls Claude unless you click.
+
 Every number comes from code in [`src/lib/engine`](src/lib/engine), never from an LLM.
 
 **Sectors is only called when you click.** Pages read the local store. Use *update prices* (new sessions since the last update) or *fetch evidence* (peers + corporate actions for a move). Daily bars are fetched once and kept; a session counts as published after 18:00 WIB; peers are re-fetched after 30 days and corporate actions after 7.
