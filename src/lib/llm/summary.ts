@@ -2,7 +2,7 @@ import type Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import * as z from "zod/v4";
 import { db, schema } from "@/lib/db";
-import { assertBudget, FALLBACK, getClient, LlmError, MODEL, recordUsage } from "./client";
+import { assertBudget, fallbackParams, getClient, LlmError, MODEL, recordUsage } from "./client";
 import { buildStockFacts } from "./facts";
 import { adviceFindings, checkPoints, type Fact, type PointIssue } from "./guardrails";
 
@@ -48,7 +48,7 @@ async function callOnce(ticker: string, facts: Fact[], feedback?: string) {
   if (feedback) content.push({ type: "text", text: feedback });
 
   const res = await client.beta.messages.parse({
-    ...FALLBACK,
+    ...fallbackParams(),
     model: MODEL,
     max_tokens: 16000,
     output_config: { effort: "medium", format: betaZodOutputFormat(SummarySchema) },

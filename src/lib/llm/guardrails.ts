@@ -120,7 +120,61 @@ export function checkPoints(points: CitedPoint[], facts: Fact[]): PointIssue[] {
   return issues;
 }
 
-// ── 4. Input limits ──────────────────────────────────────────────────────
+// ── 4. Topic ─────────────────────────────────────────────────────────────
+// Ask Stonks only answers about IDX stocks, markets, and this app's data.
+// This check runs before Claude is called, so off-topic questions cost nothing.
+
+const OFF_TOPIC: { re: RegExp; why: string }[] = [
+  // programming / interview prep
+  { re: /\b(leet\s?code|two[\s-]?sum|hackerrank|codeforces|big[\s-]?o notation|binary search tree|linked list|dynamic programming)\b/i, why: "coding" },
+  { re: /\b(write|fix|debug|explain|refactor|optimi[sz]e)\b[^.?!]{0,40}\b(code|function|script|program|query|class|regex)\b/i, why: "coding" },
+  { re: /\b(python|javascript|typescript|java|c\+\+|c#|golang|rust|php|sql|html|css|react)\b[^.?!]{0,30}\b(code|function|error|bug|syntax|script|program)\b/i, why: "coding" },
+  { re: /```|\bdef\s+\w+\(|\bfunction\s+\w+\(|\bconsole\.log\b|#include\b/i, why: "coding" },
+  // general assistant / creative / homework
+  { re: /\b(write|compose|buat(?:kan)?|tulis(?:kan)?)\b[^.?!]{0,30}\b(poem|story|song|essay|joke|cover letter|puisi|cerita|lagu|esai|lelucon|pantun)\b/i, why: "creative writing" },
+  { re: /\b(recipe|resep|translate|terjemah(?:kan)?|homework|pr sekolah|tugas sekolah|weather|cuaca)\b/i, why: "general request" },
+  { re: /\b(capital of|ibu ?kota|who (?:is|was) the president|siapa presiden)\b/i, why: "general knowledge" },
+  // attempts to change the assistant's rules
+  { re: /\b(ignore|disregard|forget|abaikan|lupakan)\b[^.?!]{0,30}\b(instruction|rule|prompt|aturan|instruksi)s?\b/i, why: "rule change" },
+  { re: /\b(system prompt|developer mode|jailbreak|you are now|pretend (?:to be|you are)|roleplay|act as|berpura-pura)\b/i, why: "rule change" },
+];
+
+const ON_TOPIC =
+  /\b(saham|stock|shares?|ticker|emiten|ihsg|idx|lq45|market|pasar|sector|sektor|subsector|price|harga|move[sd]?|gerak(?:an)?|naik|turun|rose|fell|drop|rally|volume|foreign|asing|flow|beta|sigma|σ|return|dividend|dividen|earnings|laba|news|berita|watchlist|case|kasus|falsifier|explanation|penjelasan|evidence|bukti|verdict|track record|coal|batu ?bara|mining|tambang|reserve|cadangan|license|izin|cost curve|strip ratio|nickel|nikel|gold|emas|peer|investor|broker|summary|ringkas|why|kenapa|mengapa)\b/i;
+
+/** Tickers look like 4 capital letters (BBCA). Lowercase words like "data" don't count. */
+const TICKER = /\b[A-Z]{4}\b/;
+
+export interface TopicCheck {
+  ok: boolean;
+  reason?: string;
+}
+
+/**
+ * Is the latest question something Ask Stonks should answer? Off-topic
+ * patterns always block. Otherwise the question needs a stock/app signal,
+ * unless it follows an on-topic exchange (short follow-ups like "why?" are fine).
+ */
+export function checkTopic(turns: ChatTurn[], contextTicker: string | null): TopicCheck {
+  const question = turns.at(-1)?.content ?? "";
+  const off = OFF_TOPIC.find((p) => p.re.test(question));
+  if (off) return { ok: false, reason: off.why };
+  if (ON_TOPIC.test(question) || TICKER.test(question)) return { ok: true };
+  const priorOnTopic = turns.slice(0, -1).some((t) => t.role === "user" && (ON_TOPIC.test(t.content) || TICKER.test(t.content)));
+  if (priorOnTopic) return { ok: true };
+  // On a ticker page, a bare question ("what happened?") is about that ticker.
+  if (contextTicker && question.length <= 160) return { ok: true };
+  return { ok: false, reason: "not about stocks or this app" };
+}
+
+export const OFF_TOPIC_REPLY =
+  "I only answer questions about the stocks in Stonks: their moves, the explanations and evidence, case files, foreign flow, and mining assets. " +
+  "Saya hanya menjawab pertanyaan seputar saham dan data di Stonks.";
+
+/** What the model is told to reply with when a question slips past checkTopic. */
+export const OFF_TOPIC_MARKER = "OFF_TOPIC";
+
+// ── 5. Input limits ──────────────────────────────────────────────────────
 
 export const MAX_MESSAGE_CHARS = 2000;
 export const MAX_TURNS = 24;

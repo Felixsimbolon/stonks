@@ -14,6 +14,8 @@ interface Msg {
   /** Tool currently being read, while streaming. */
   tool?: string;
   withheld?: string[];
+  /** Declined as off-topic by our guardrail (or the model's marker). */
+  offTopic?: boolean;
   error?: string;
   pending?: boolean;
 }
@@ -74,7 +76,7 @@ export function AskPanel({ configured }: { configured: boolean }) {
     if (!q || busy) return;
     // Only clean turns go back to the server: withheld or failed answers are left out.
     const history = [...msgs, { role: "user" as const, content: q }]
-      .filter((m) => !m.withheld && !m.error && m.content.trim())
+      .filter((m) => !m.withheld && !m.error && !m.offTopic && m.content.trim())
       .slice(-20)
       .map((m) => ({ role: m.role, content: m.content }));
     setMsgs((prev) => [...prev, { role: "user", content: q }, { role: "assistant", content: "", pending: true }]);
@@ -110,6 +112,7 @@ export function AskPanel({ configured }: { configured: boolean }) {
           if (e.t === "text") patchLast((m) => ({ ...m, content: m.content + e.d, tool: undefined }));
           else if (e.t === "tool") patchLast((m) => ({ ...m, tool: e.name }));
           else if (e.t === "withheld") patchLast((m) => ({ ...m, withheld: e.reasons }));
+          else if (e.t === "offtopic") patchLast((m) => ({ ...m, content: e.message, offTopic: true, tool: undefined }));
           else if (e.t === "error") patchLast((m) => ({ ...m, error: e.message }));
         }
       }
@@ -214,6 +217,8 @@ export function AskPanel({ configured }: { configured: boolean }) {
                           This answer was withheld: it drifted into advice ({m.withheld.join("; ")}). Stonks describes evidence; it
                           doesn&apos;t tell you what to trade. Try asking what the data shows instead.
                         </p>
+                      ) : m.offTopic ? (
+                        <p className="border-l-2 border-hair pl-3 text-faint">{m.content}</p>
                       ) : (
                         m.content && <p className="whitespace-pre-wrap text-muted">{m.content}</p>
                       )}

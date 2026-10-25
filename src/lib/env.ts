@@ -12,16 +12,23 @@ const schema = z.object({
   SECTORS_CREDIT_LIMIT: z.coerce.number().int().positive().default(1000),
 
   ANTHROPIC_API_KEY: z.string().trim().optional(),
-  // Claude model for summaries and chat. Opus 5.5 by default; Sonnet/Haiku are cheaper.
-  LLM_MODEL: z.string().default("claude-opus-5-5"),
+  // Optional endpoint. A Microsoft Foundry URL (…services.ai.azure.com…) switches to the Foundry client.
+  ANTHROPIC_API_URL: z.string().trim().optional(),
+  // Claude model (or Foundry deployment name) for summaries and chat. CLAUDE_MODEL is accepted as an alias.
+  LLM_MODEL: z.string().optional(),
+  CLAUDE_MODEL: z.string().optional(),
   // Hard daily cap on Claude tokens (input + output, cache reads excluded) across summaries and chat.
   LLM_DAILY_TOKEN_LIMIT: z.coerce.number().int().positive().default(500_000),
   TELEGRAM_BOT_TOKEN: z.string().optional(),
   TELEGRAM_CHAT_ID: z.string().optional(),
 });
 
+// Blank values count as unset; stray surrounding quotes are dropped.
 const blankToUndefined = Object.fromEntries(
-  Object.entries(process.env).map(([k, v]) => [k, v?.trim() === "" ? undefined : v]),
+  Object.entries(process.env).map(([k, v]) => {
+    const s = v?.trim().replace(/^(["'])(.*)\1$/, "$2").trim();
+    return [k, s === "" ? undefined : s];
+  }),
 );
 
 export const env = schema.parse(blankToUndefined);

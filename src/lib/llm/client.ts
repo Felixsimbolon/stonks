@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { AnthropicFoundry } from "@anthropic-ai/foundry-sdk";
 import { eq, sql } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { env } from "@/lib/env";
@@ -6,35 +7,73 @@ import { todayWib } from "@/lib/sectors";
 
 // One place for the Claude client, model choice, refusal fallback, and the
 // daily token budget. Every call is metered into llm_calls.
+//
+// Provider: the first-party Claude API by default; a Microsoft Foundry URL in
+// ANTHROPIC_API_URL (https://{resource}.services.ai.azure.com/…) selects the
+// Foundry client, with the resource name taken from the host.
 
-export const MODEL = env.LLM_MODEL;
+export const MODEL = env.CLAUDE_MODEL ?? env.LLM_MODEL ?? "claude-opus-5-5";
+
+type Provider = { kind: "anthropic"; baseURL?: string } | { kind: "foundry"; resource: string };
+
+function provider(): Provider {
+  const url = env.ANTHROPIC_API_URL;
+  if (!url) return { kind: "anthropic" };
+  let host: string;
+  try {
+    host = new URL(url).hostname;
+  } catch {
+    throw new LlmError(`ANTHROPIC_API_URL is not a valid URL.`);
+  }
+  if (host.endsWith(".services.ai.azure.com")) return { kind: "foundry", resource: host.split(".")[0] };
+  return { kind: "anthropic", baseURL: url };
+}
+
+/** Provider kind for display and feature gating; an invalid URL surfaces later, when a call is made. */
+export const PROVIDER: Provider["kind"] = (() => {
+  try {
+    return provider().kind;
+  } catch {
+    return "anthropic";
+  }
+})();
 
 /**
- * Server-side refusal fallback: if a safety classifier declines, the API
- * re-runs the request on Anthropic's recommended model for that category.
+ * Server-side refusal fallback (if a safety classifier declines, the API
+ * re-runs the request on Anthropic's recommended model for that category).
+ * Only the first-party API supports it; Foundry requests go without.
  */
-export const FALLBACK = {
-  betas: ["server-side-fallback-2026-07-01"] as Anthropic.Beta.AnthropicBeta[],
-  fallbacks: "default" as const,
-};
+export function fallbackParams(): { betas?: Anthropic.Beta.AnthropicBeta[]; fallbacks?: "default" } {
+  return PROVIDER === "anthropic" ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" } : {};
+}
 
-let client: Anthropic | null = null;
+type ClaudeClient = Anthropic | AnthropicFoundry;
+let client: ClaudeClient | null = null;
 
 export function llmConfigured(): boolean {
   return Boolean(env.ANTHROPIC_API_KEY);
 }
 
-export function getClient(): Anthropic {
+export function getClient(): ClaudeClient {
   if (!env.ANTHROPIC_API_KEY) throw new LlmError("ANTHROPIC_API_KEY is not set. Add it to .env to use AI features.");
-  client ??= new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
+  if (!client) {
+    const p = provider();
+    client =
+      p.kind === "foundry"
+        ? new AnthropicFoundry({ resource: p.resource, apiKey: env.ANTHROPIC_API_KEY })
+        : new Anthropic({ apiKey: env.ANTHROPIC_API_KEY, baseURL: p.baseURL });
+  }
   return client;
 }
 
 export class LlmError extends Error {}
 
+/** Billed-at-full-rate tokens today: input, output, and cache writes (cache reads are ~10% and left out). */
 export async function tokensUsedToday(): Promise<number> {
   const [row] = await db
-    .select({ n: sql<number>`coalesce(sum(${schema.llmCalls.inputTokens} + ${schema.llmCalls.outputTokens}), 0)` })
+    .select({
+      n: sql<number>`coalesce(sum(${schema.llmCalls.inputTokens} + ${schema.llmCalls.outputTokens} + ${schema.llmCalls.cacheWriteTokens}), 0)`,
+    })
     .from(schema.llmCalls)
     .where(eq(schema.llmCalls.day, todayWib()));
   return Number(row?.n ?? 0);
@@ -66,18 +105,17 @@ export async function recordUsage(kind: "summary" | "chat", model: string, usage
 export interface LlmUsage {
   configured: boolean;
   model: string;
+  provider: "anthropic" | "foundry";
   usedToday: number;
   limit: number;
 }
 
 export async function llmUsage(): Promise<LlmUsage> {
-  return { configured: llmConfigured(), model: MODEL, usedToday: await tokensUsedToday(), limit: env.LLM_DAILY_TOKEN_LIMIT };
-}
-
-/** Text of a response's text blocks, joined. */
-export function textOf(content: Anthropic.Beta.BetaContentBlock[]): string {
-  return content
-    .filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === "text")
-    .map((b) => b.text)
-    .join("");
+  return {
+    configured: llmConfigured(),
+    model: MODEL,
+    provider: PROVIDER,
+    usedToday: await tokensUsedToday(),
+    limit: env.LLM_DAILY_TOKEN_LIMIT,
+  };
 }
