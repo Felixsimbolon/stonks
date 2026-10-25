@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { checkOpenCases, fileCase } from "@/lib/casebook/store";
+import { getAssetBacking, loadCostCurve } from "@/lib/mining/service";
 import { investigateMove, scanTicker } from "@/lib/pipeline";
 import { SectorsError, creditsUsed } from "@/lib/sectors";
 import { TICKER_RE, addToWatchlist, listWatchlist, removeFromWatchlist } from "@/lib/views";
@@ -71,6 +72,27 @@ export async function refreshAll(): Promise<FetchResult> {
     for (const t of await listWatchlist()) await scanTicker(t, { refresh: true });
   });
   revalidatePath("/");
+  return r;
+}
+
+// ── Mining asset backing ───────────────────────────────────────────────
+
+/** Fetch the coal cost curve inputs: financials, production, ownership, market caps, coal price. */
+export async function loadCostCurveAction(): Promise<FetchResult> {
+  const r = await metered(async () => {
+    await loadCostCurve({ refresh: true });
+  });
+  revalidatePath("/mining");
+  return r;
+}
+
+/** Fetch one issuer's mining profile: licenses, reserves and production history. */
+export async function fetchAssetBackingAction(ticker: string): Promise<FetchResult> {
+  const r = await metered(async () => {
+    const view = await getAssetBacking(ticker, { refresh: true });
+    if (view.status === "not_mining") throw new Error(`${ticker} isn't in Sectors' mining dataset.`);
+  });
+  revalidatePath(`/${ticker}`);
   return r;
 }
 

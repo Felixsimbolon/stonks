@@ -5,7 +5,8 @@ import { db, schema } from "@/lib/db";
 import { env } from "@/lib/env";
 import { windowOf, type HypothesisType, type Move } from "@/lib/engine";
 import { investigateMove, scanTicker, type InvestigationResult } from "@/lib/pipeline";
-import { creditsUsed } from "@/lib/sectors";
+import { getAssetBacking, loadCostCurve, type AssetBackingView, type CostCurveView } from "@/lib/mining/service";
+import { creditsUsed, getPeers, NotCachedError } from "@/lib/sectors";
 
 // Serializable data for pages. Everything here is safe to hand to client
 // components. Read-only: these never call Sectors (see app/actions.ts).
@@ -93,7 +94,33 @@ export interface TickerView {
   caseFile: CaseView | null;
   /** Per explanation: a one-line track record from closed cases, or null. */
   trackNotes: Partial<Record<HypothesisType, string | null>>;
+  /** Mining asset backing; null when this doesn't look like a mining issuer. */
+  assetBacking: AssetBackingView | null;
   error?: string;
+}
+
+const MINING_SUBSECTOR = /coal|mining|metal|mineral|gold|nickel|tin|copper/i;
+
+/**
+ * Asset backing for the ticker page, from stored data only. Shown when Sectors'
+ * mining data has the ticker, or when its subsector looks like mining (so the
+ * "fetch" prompt doesn't appear on banks and telcos).
+ */
+async function assetBackingFor(ticker: string): Promise<AssetBackingView | null> {
+  const view = await getAssetBacking(ticker);
+  if (view.status === "ready") return view;
+  if (view.status === "not_mining") return null;
+  let subSector: string | null = null;
+  try {
+    subSector = (await getPeers(ticker)).subSector;
+  } catch (e) {
+    if (!(e instanceof NotCachedError)) throw e;
+  }
+  return subSector && MINING_SUBSECTOR.test(subSector) ? view : null;
+}
+
+export async function getMiningView(): Promise<CostCurveView> {
+  return loadCostCurve();
 }
 
 export async function getTickerView(ticker: string, date?: string): Promise<TickerView> {
@@ -119,6 +146,7 @@ export async function getTickerView(ticker: string, date?: string): Promise<Tick
       result,
       caseFile,
       trackNotes,
+      assetBacking: await assetBackingFor(ticker),
     };
   } catch (e) {
     return {
@@ -130,6 +158,7 @@ export async function getTickerView(ticker: string, date?: string): Promise<Tick
       result: null,
       caseFile: null,
       trackNotes: {},
+      assetBacking: null,
       error: errorMessage(e),
     };
   }
