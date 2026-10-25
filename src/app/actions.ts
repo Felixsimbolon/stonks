@@ -1,6 +1,9 @@
 "use server";
 
+import Anthropic from "@anthropic-ai/sdk";
 import { revalidatePath } from "next/cache";
+import { LlmError } from "@/lib/llm/client";
+import { generateSummary } from "@/lib/llm/summary";
 import { checkOpenCases, fileCase } from "@/lib/casebook/store";
 import { getAssetBacking, loadCostCurve } from "@/lib/mining/service";
 import { investigateMove, scanTicker } from "@/lib/pipeline";
@@ -94,6 +97,25 @@ export async function fetchAssetBackingAction(ticker: string): Promise<FetchResu
   });
   revalidatePath(`/${ticker}`);
   return r;
+}
+
+// ── AI summary (Claude; 0 Sectors credits) ─────────────────────────────
+
+export async function generateSummaryAction(ticker: string): Promise<FetchResult> {
+  try {
+    const s = await generateSummary(ticker);
+    revalidatePath(`/${ticker}`);
+    return {
+      message: s.dropped
+        ? `summary written · ${s.dropped} part${s.dropped === 1 ? "" : "s"} dropped by the guardrails`
+        : "summary written · every point checked against the facts",
+    };
+  } catch (e) {
+    if (e instanceof LlmError) return { error: e.message };
+    if (e instanceof Anthropic.RateLimitError) return { error: "Claude is rate-limited right now. Try again in a minute." };
+    if (e instanceof Anthropic.APIError) return { error: `Claude API error (${e.status ?? "network"}). Try again.` };
+    return { error: message(e) };
+  }
 }
 
 // ── Case files (local only, 0 credits) ─────────────────────────────────
