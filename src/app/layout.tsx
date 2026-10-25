@@ -45,7 +45,14 @@ export default function RootLayout({
           <Link href="/" className="display text-3xl italic tracking-tight">
             stonks<span className="text-stock">.</span>
           </Link>
-          <span className="eyebrow hidden sm:inline">evidence-first · IDX</span>
+          <nav className="flex items-baseline gap-6">
+            <Link href="/" className="eyebrow transition-colors hover:text-ink">
+              watchlist
+            </Link>
+            <Link href="/cases" className="eyebrow transition-colors hover:text-ink">
+              case files
+            </Link>
+          </nav>
         </header>
 
         {children}

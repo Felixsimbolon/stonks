@@ -9,10 +9,13 @@ explanation holds, and know what would prove it wrong.
 
 1. **Detect:** flag unusual moves on your watchlist (beta-adjusted abnormal return, volume spike, gap).
 2. **Investigate:** build an evidence board from Sectors data.
-3. **Test:** score competing explanations (market beta, sector rotation, earnings, dividend,
-   liquidity, and the null hypothesis "just noise") with deterministic checks.
+3. **Test:** split the move into market, sector and stock-specific parts, then score competing
+   explanations (market, sector, earnings, ex-dividend, volume, foreign flow, news, and the null
+   hypothesis "just noise") with deterministic checks.
 4. **Falsify:** attach machine-checkable conditions that would prove each surviving story wrong.
-5. **Monitor:** re-check those conditions every trading day and alert when a story breaks.
+5. **File and follow:** freeze an investigation as a case file, re-check its conditions as new
+   sessions arrive, and close it when each one breaks or survives. Closed cases build the engine's
+   track record: how often each kind of explanation actually held (`/cases`).
 
 Every number comes from code in [`src/lib/engine`](src/lib/engine), never from an LLM.
 
@@ -44,6 +47,7 @@ npm run dev
 src/lib/engine/    pure evidence engine: stats, detector, hypotheses, falsifiers (+ tests)
 src/lib/sectors/   Sectors REST v2 client: cache, stored bars, credit ledger; typed data access
 src/lib/pipeline.ts  glue: fetch data → run engine
+src/lib/casebook/  case files: pure lifecycle + track record logic (+ tests), DB store
 src/lib/db/        Drizzle schema (SQLite / libSQL)
 scripts/           CLI helpers
 ```

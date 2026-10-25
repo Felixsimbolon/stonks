@@ -9,11 +9,13 @@ interface Props {
   label: string;
   /** Shown under the label, e.g. the expected credit cost. */
   hint?: string;
+  /** Label while running. */
+  pendingLabel?: string;
   className?: string;
 }
 
 /** A text button that runs a Sectors fetch and reports what it cost. */
-export function FetchButton({ action, label, hint, className = "" }: Props) {
+export function FetchButton({ action, label, hint, pendingLabel = "fetching from Sectors…", className = "" }: Props) {
   const [pending, start] = useTransition();
   const [result, setResult] = useState<FetchResult | null>(null);
 
@@ -40,7 +42,7 @@ export function FetchButton({ action, label, hint, className = "" }: Props) {
           ↻
         </motion.span>
         <span className="underline decoration-hair underline-offset-4 transition-colors group-hover:decoration-stock">
-          {pending ? "fetching from Sectors…" : label}
+          {pending ? pendingLabel : label}
         </span>
       </motion.button>
 
@@ -54,7 +56,9 @@ export function FetchButton({ action, label, hint, className = "" }: Props) {
               exit={{ opacity: 0 }}
               className={result.error ? "text-down" : "text-faint"}
             >
-              {result.error ?? (result.used ? `done · ${result.used} credit${result.used === 1 ? "" : "s"} used` : "already up to date · 0 credits")}
+              {result.error ??
+                result.message ??
+                (result.used ? `done · ${result.used} credit${result.used === 1 ? "" : "s"} used` : "already up to date · 0 credits")}
             </motion.p>
           ) : hint ? (
             <motion.p key="hint" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="text-faint">

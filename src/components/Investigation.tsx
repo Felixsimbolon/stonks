@@ -5,6 +5,7 @@ import { useState } from "react";
 import type { Evidence, HypothesisResult, HypothesisType, Verdict } from "@/lib/engine";
 import type { FetchResult } from "@/app/actions";
 import type { TickerView } from "@/lib/views";
+import { CaseFile } from "./CaseFile";
 import { FetchButton } from "./FetchButton";
 import { dirColor, pct, shortDate, share, sigma } from "./format";
 
@@ -187,12 +188,14 @@ function HypothesisRow({
   r,
   active,
   onFocus,
+  trackNote,
 }: {
   h: HypothesisResult;
   rank: number;
   r: Result;
   active: boolean;
   onFocus: (h: HypothesisResult | null) => void;
+  trackNote?: string | null;
 }) {
   const v = VERDICT_STYLE[h.verdict];
   const dimmed = h.verdict === "refuted" || h.verdict === "not_needed" || h.verdict === "untested";
@@ -238,6 +241,7 @@ function HypothesisRow({
           )}
 
           <p className={`mt-3 text-sm leading-relaxed ${dimmed ? "text-faint" : "text-muted"}`}>{h.rationale}</p>
+          {trackNote && !dimmed && <p className="num mt-2 text-xs text-sector/80">{trackNote}</p>}
           {h.type === "news" && r.articles.length > 0 && (
             <ul className="mt-3 space-y-2">
               {r.articles.slice(0, 4).map((a) => (
@@ -273,10 +277,18 @@ export function Investigation({
   ticker,
   result: r,
   fetchEvidence,
+  caseFile,
+  trackNotes,
+  fileCase,
+  checkCases,
 }: {
   ticker: string;
   result: Result;
   fetchEvidence: () => Promise<FetchResult>;
+  caseFile: TickerView["caseFile"];
+  trackNotes: TickerView["trackNotes"];
+  fileCase: () => Promise<FetchResult>;
+  checkCases: () => Promise<FetchResult>;
 }) {
   const [focusPart, setFocusPart] = useState<PartKey | null>(null);
   const [focusH, setFocusH] = useState<HypothesisResult | null>(null);
@@ -364,7 +376,7 @@ export function Investigation({
             <p className="eyebrow mb-1">competing explanations, ranked</p>
             <ul>
               {hypotheses.map((hyp, i) => (
-                <HypothesisRow key={hyp.type} h={hyp} rank={i} r={r} active={focusH?.type === hyp.type} onFocus={setFocusH} />
+                <HypothesisRow key={hyp.type} h={hyp} rank={i} r={r} active={focusH?.type === hyp.type} onFocus={setFocusH} trackNote={trackNotes[hyp.type]} />
               ))}
             </ul>
           </div>
@@ -399,6 +411,13 @@ export function Investigation({
               })}
             </dl>
           </aside>
+        </section>
+
+        {/* case file */}
+        <section className="mt-20">
+          <div className="hairline mb-10" />
+          <p className="eyebrow mb-6">case file</p>
+          <CaseFile caseFile={caseFile} fileCase={fileCase} checkCases={checkCases} />
         </section>
       </motion.div>
     </AnimatePresence>

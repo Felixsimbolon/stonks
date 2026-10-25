@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { fetchEvidence, refreshTicker } from "@/app/actions";
+import { checkCasesAction, fetchEvidence, fileCaseAction, refreshTicker } from "@/app/actions";
 import { notFound } from "next/navigation";
 import { FadeIn } from "@/components/FadeIn";
 import { FetchButton } from "@/components/FetchButton";
@@ -84,6 +84,10 @@ export default async function TickerPage({
                     ticker={ticker}
                     result={view.result}
                     fetchEvidence={fetchEvidence.bind(null, ticker, view.result.investigation.move.date)}
+                    caseFile={view.caseFile}
+                    trackNotes={view.trackNotes}
+                    fileCase={fileCaseAction.bind(null, ticker, view.result.investigation.move.date)}
+                    checkCases={checkCasesAction}
                   />
                 </section>
               )}

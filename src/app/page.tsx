@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { refreshAll } from "@/app/actions";
 import { AddTicker } from "@/components/AddTicker";
 import { CreditMeter } from "@/components/CreditMeter";
@@ -6,13 +7,13 @@ import { FetchButton } from "@/components/FetchButton";
 import { shortDate } from "@/components/format";
 import { Watchlist } from "@/components/Watchlist";
 import { env } from "@/lib/env";
-import { getCredits, getWatchRows, listWatchlist } from "@/lib/views";
+import { countOpenCases, getCredits, getWatchRows, listWatchlist } from "@/lib/views";
 
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
   const tickers = await listWatchlist();
-  const [rows, credits] = await Promise.all([getWatchRows(tickers), getCredits()]);
+  const [rows, credits, openCases] = await Promise.all([getWatchRows(tickers), getCredits(), countOpenCases()]);
   const through = rows.map((r) => r.dataThrough).filter((d): d is string => d !== null).sort()[0];
 
   return (
@@ -50,6 +51,11 @@ export default async function Home() {
                 hint={`${through ? `data through ${shortDate(through)}` : "no data yet"} · ~1 credit per ticker (+1 for IHSG) when a new session is out`}
                 className="sm:text-right"
               />
+            )}
+            {openCases > 0 && (
+              <Link href="/cases" className="text-sm text-muted transition-colors hover:text-ink">
+                <span className="text-ink">{openCases}</span> open case{openCases === 1 ? "" : "s"} →
+              </Link>
             )}
             <CreditMeter {...credits} />
           </FadeIn>
