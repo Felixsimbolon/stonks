@@ -4,8 +4,15 @@ import { FetchButton } from "@/components/FetchButton";
 import { shortDate } from "@/components/format";
 import { CostCurve } from "@/components/mining/CostCurve";
 import { CurveTable } from "@/components/mining/CurveTable";
-import { usdT } from "@/components/mining/format";
-import { Sparkline } from "@/components/Sparkline";
+import { KpiRow, StatTile } from "@/components/charts/kit";
+import { mt, usdT, years } from "@/components/mining/format";
+import {
+  CapPerTonChart,
+  CoalPriceChart,
+  CostBreakdownChart,
+  ReserveLifeChart,
+  StripVsCostChart,
+} from "@/components/mining/MiningCharts";
 import { getMiningView } from "@/lib/views";
 
 export const dynamic = "force-dynamic";
@@ -13,6 +20,8 @@ export const dynamic = "force-dynamic";
 export default async function MiningPage() {
   const view = await getMiningView();
   const ready = view.status === "ready";
+  const lives = view.rows.map((r) => r.reserveLifeYears).filter((x): x is number => x !== null).sort((a, b) => a - b);
+  const medianLife = lives.length ? lives[Math.floor(lives.length / 2)] : null;
 
   return (
     <main className="mx-auto max-w-6xl px-5 sm:px-8">
@@ -59,25 +68,38 @@ export default async function MiningPage() {
         </FadeIn>
       ) : (
         <>
+          <section className="mb-16">
+            <KpiRow>
+              <StatTile
+                label="Coal benchmark"
+                value={view.latestPrice ? usdT(view.latestPrice.usdPerTon) : "—"}
+                note={view.latestPrice ? `${shortDate(view.latestPrice.date)} ${view.latestPrice.date.slice(0, 4)}` : "not loaded"}
+              />
+              <StatTile label="Companies on the curve" value={String(view.curve.segments.length)} note={`of ${view.rows.length} with mining financials`} delay={0.05} />
+              <StatTile label="Coal sold on the curve" value={mt(view.curve.totalMt)} note="latest annual figures" delay={0.1} />
+              <StatTile
+                label="Median reserve life"
+                value={medianLife !== null ? years(medianLife) : "—"}
+                note="at latest production"
+                delay={0.15}
+              />
+            </KpiRow>
+          </section>
+
           <section>
-            <div className="mb-6 flex flex-wrap items-end justify-between gap-6">
-              <p className="eyebrow">coal cost curve</p>
-              {view.latestPrice && (
-                <div className="flex items-end gap-4">
-                  <Sparkline
-                    prices={view.prices.map((p) => ({ date: p.date, close: p.usdPerTon }))}
-                    width={160}
-                    height={36}
-                  />
-                  <p className="num text-right text-xs text-faint">
-                    coal benchmark
-                    <span className="block text-sm text-ink">{usdT(view.latestPrice.usdPerTon)}</span>
-                    {shortDate(view.latestPrice.date)} {view.latestPrice.date.slice(0, 4)}
-                  </p>
-                </div>
-              )}
-            </div>
+            <p className="eyebrow mb-6">coal cost curve</p>
             <CostCurve view={view} />
+          </section>
+
+          <section className="mt-20">
+            <CoalPriceChart prices={view.prices} />
+          </section>
+
+          <section className="mt-20 grid gap-16 lg:grid-cols-2">
+            <CostBreakdownChart rows={view.rows} />
+            <StripVsCostChart rows={view.rows} />
+            <ReserveLifeChart rows={view.rows} />
+            <CapPerTonChart rows={view.rows.map((r) => ({ symbol: r.symbol, capPerTonIdr: r.capPerTonIdr, sublabel: r.name }))} />
           </section>
 
           <section className="mt-20">
