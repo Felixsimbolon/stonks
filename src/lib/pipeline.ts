@@ -2,11 +2,13 @@ import {
   decompose,
   detectMoves,
   evaluateFalsifier,
+  falsifierPath,
   falsifiersFor,
   investigate,
   type Bar,
   type Falsifier,
   type FalsifierEvaluation,
+  type FalsifierPath,
   type Investigation,
   type Move,
   type NewsItem,
@@ -62,7 +64,7 @@ export interface InvestigationResult {
   investigation: Investigation;
   subSector: string | null;
   peerCount: number;
-  falsifiers: (Falsifier & { evaluation: FalsifierEvaluation })[];
+  falsifiers: (Falsifier & { evaluation: FalsifierEvaluation; path: FalsifierPath | null })[];
   /** Articles tagged with the ticker on the move day or the day before. */
   articles: NewsItem[];
   /** Evidence that was never fetched; the hypotheses that need it show as untested. */
@@ -124,9 +126,11 @@ export async function investigateMove(
     },
   });
 
+  const post = { move, bars, marketBars: market, peers, flows: flows ?? undefined };
   const falsifiers = falsifiersFor(investigation).map((f) => ({
     ...f,
-    evaluation: evaluateFalsifier(f.rule, { move, bars, marketBars: market, peers, flows: flows ?? undefined }),
+    evaluation: evaluateFalsifier(f.rule, post),
+    path: falsifierPath(f.rule, post),
   }));
 
   return {

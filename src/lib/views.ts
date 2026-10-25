@@ -3,10 +3,18 @@ import { headlineRecord, recordNote, type Tally, type TrackRow } from "@/lib/cas
 import { getCase, getTrackRecord, listCases, type CaseView } from "@/lib/casebook/store";
 import { db, schema } from "@/lib/db";
 import { env } from "@/lib/env";
-import { windowOf, type HypothesisType, type Move } from "@/lib/engine";
+import { decompose, windowOf, type Bar, type FlowPoint, type HypothesisType, type Move } from "@/lib/engine";
 import { investigateMove, scanTicker, type InvestigationResult } from "@/lib/pipeline";
 import { getAssetBacking, loadCostCurve, type AssetBackingView, type CostCurveView } from "@/lib/mining/service";
-import { creditsUsed, getPeers, NotCachedError } from "@/lib/sectors";
+import {
+  addDays,
+  creditsUsed,
+  getDailyBars,
+  getForeignFlows,
+  getPeers,
+  NotCachedError,
+  todayWib,
+} from "@/lib/sectors";
 
 // Serializable data for pages. Everything here is safe to hand to client
 // components. Read-only: these never call Sectors (see app/actions.ts).
@@ -55,7 +63,10 @@ export interface WatchRow {
   prices: PricePoint[];
   last: number | null;
   change: number | null;
+  /** Flagged moves in the last 20 sessions, newest first. */
   moves: MoveSummary[];
+  /** Flagged moves in the last 60 sessions, oldest first (for the timeline). */
+  moves60: MoveSummary[];
   dataThrough: string | null;
   error?: string;
 }
@@ -64,23 +75,75 @@ export async function getWatchRows(tickers: string[]): Promise<WatchRow[]> {
   const rows: WatchRow[] = [];
   for (const ticker of tickers) {
     try {
-      const scan = await scanTicker(ticker, { scanDays: 20 });
+      const scan = await scanTicker(ticker, { scanDays: 60 });
       const bars = scan.bars;
       const last = bars.at(-1);
       const prev = bars.at(-2);
+      const since20 = bars.at(-20)?.date ?? "";
       rows.push({
         ticker,
         prices: bars.slice(-60).map((b) => ({ date: b.date, close: b.close })),
         last: last?.close ?? null,
         change: last && prev ? last.close / prev.close - 1 : null,
-        moves: scan.moves.map(summarize).reverse(),
+        moves: scan.moves.filter((m) => m.date >= since20).map(summarize).reverse(),
+        moves60: scan.moves.map(summarize),
         dataThrough: last?.date ?? null,
       });
     } catch (e) {
-      rows.push({ ticker, prices: [], last: null, change: null, moves: [], dataThrough: null, error: errorMessage(e) });
+      rows.push({ ticker, prices: [], last: null, change: null, moves: [], moves60: [], dataThrough: null, error: errorMessage(e) });
     }
   }
   return rows;
+}
+
+// ── Ticker page chart data ───────────────────────────────────────────────
+
+export interface VolumePoint {
+  date: string;
+  volume: number;
+  flagged: boolean;
+}
+
+export interface MoveDriver {
+  date: string;
+  ret: number;
+  market: number;
+  sector: number;
+  stockSpecific: number;
+  sectorAvailable: boolean;
+}
+
+/**
+ * The market / sector / stock-specific split of every flagged move, from
+ * stored data only. Without stored peers the sector part is unavailable and
+ * folds into stock-specific.
+ */
+async function moveDrivers(ticker: string, scan: Awaited<ReturnType<typeof scanTicker>>): Promise<MoveDriver[]> {
+  if (scan.moves.length === 0) return [];
+  let peerTickers: string[] = [];
+  try {
+    peerTickers = (await getPeers(ticker)).peers;
+  } catch (e) {
+    if (!(e instanceof NotCachedError)) throw e;
+  }
+  const from = addDays(scan.moves[0].date, -180);
+  const to = todayWib();
+  const peers: Record<string, Bar[]> = {};
+  for (const p of peerTickers) {
+    const b = await getDailyBars(p, from, to);
+    if (b.length > 0) peers[p] = b;
+  }
+  return scan.moves.map((m) => {
+    const d = decompose(m, scan.bars, scan.market, peers);
+    return {
+      date: m.date,
+      ret: m.ret,
+      market: d.shares.market,
+      sector: d.shares.sector,
+      stockSpecific: d.shares.stockSpecific,
+      sectorAvailable: d.sector !== null,
+    };
+  });
 }
 
 export interface TickerView {
@@ -96,6 +159,12 @@ export interface TickerView {
   trackNotes: Partial<Record<HypothesisType, string | null>>;
   /** Mining asset backing; null when this doesn't look like a mining issuer. */
   assetBacking: AssetBackingView | null;
+  /** Daily volume over the charted window, flagged days marked. */
+  volumes: VolumePoint[];
+  /** Stored daily foreign flow over the charted window; null if never fetched. */
+  flows: FlowPoint[] | null;
+  /** What drove each flagged move. */
+  drivers: MoveDriver[];
   error?: string;
 }
 
@@ -137,9 +206,15 @@ export async function getTickerView(ticker: string, date?: string): Promise<Tick
     const caseFile = move ? await getCase(ticker, move.date) : null;
     const record = await getTrackRecord();
     const trackNotes = Object.fromEntries(record.map((row) => [row.type, recordNote(row)]));
+    const charted = scan.bars.slice(-120);
+    const flagged = new Set(moves.map((m) => m.date));
+    const flows = charted.length ? await getForeignFlows(ticker, charted[0].date, charted.at(-1)!.date) : null;
     return {
       ticker,
-      prices: scan.bars.slice(-120).map((b) => ({ date: b.date, close: b.close })),
+      volumes: charted.map((b) => ({ date: b.date, volume: b.volume, flagged: flagged.has(b.date) })),
+      flows,
+      drivers: await moveDrivers(ticker, scan),
+      prices: charted.map((b) => ({ date: b.date, close: b.close })),
       moves: moves.map(summarize),
       selected: move?.date ?? null,
       dataThrough: scan.bars.at(-1)?.date ?? null,
@@ -159,6 +234,9 @@ export async function getTickerView(ticker: string, date?: string): Promise<Tick
       caseFile: null,
       trackNotes: {},
       assetBacking: null,
+      volumes: [],
+      flows: null,
+      drivers: [],
       error: errorMessage(e),
     };
   }

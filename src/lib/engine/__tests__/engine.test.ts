@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   detectMoves,
   evaluateFalsifier,
+  falsifierPath,
   falsifiersFor,
   investigate,
   measureMove,
@@ -199,6 +200,20 @@ describe("falsifiers", () => {
       { move, bars: cut, marketBars: sc.market, peers },
     );
     expect(ev).toEqual({ status: "pending", daysObserved: 2 });
+  });
+
+  it("charts a falsifier's metric day by day against its threshold", () => {
+    const bars = sc.stock({ seed: 1, shocks: { [moveDate]: -0.05 } });
+    const move = measureMove("TEST", bars, sc.market, moveDate)!;
+    const path = falsifierPath(
+      { metric: "retracement", window: 5, op: ">", value: 0.5 },
+      { move, bars: bars.slice(0, 154), marketBars: sc.market, peers },
+    )!;
+    expect(path.dates).toEqual(sc.dates.slice(151, 154));
+    expect(path.values).toHaveLength(3);
+    expect(path.thresholds).toEqual([0.5]);
+    const abs = falsifierPath({ metric: "cum_abnormal_return", window: 5, op: "abs>", value: 0.04 }, { move, bars, marketBars: sc.market, peers })!;
+    expect(abs.thresholds).toEqual([0.04, -0.04]);
   });
 
   it("survives when nothing happens for the full window", () => {

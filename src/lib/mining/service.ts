@@ -24,7 +24,15 @@ import {
   ifFetched,
   listCompaniesWithFinancials,
 } from "./fetch";
-import type { CommodityPrice, CommodityYear, MiningCompanyRef, MiningDetail, MiningPerformance, Ownership } from "./types";
+import type {
+  CommodityPrice,
+  CommodityYear,
+  MiningCompanyRef,
+  MiningDetail,
+  MiningFinancials,
+  MiningPerformance,
+  Ownership,
+} from "./types";
 
 // Asset backing for mining issuers, assembled from the Sectors mining
 // extension. Read-only unless `refresh` is passed (then only missing or
@@ -47,6 +55,24 @@ async function latestMarketCap(symbol: string, mode: FetchMode): Promise<number 
 
 // ── Cost curve ───────────────────────────────────────────────────────────
 
+/** Split cost of revenue per ton using the breakdown Sectors provides; the remainder is "other". */
+function costPartsPerTon(fin: MiningFinancials, salesMt: number | null): CostParts | null {
+  if (!salesMt || salesMt <= 0 || fin.costOfRevenueUsd === null) return null;
+  const tons = salesMt * 1e6;
+  const sum = (re: RegExp) =>
+    Object.entries(fin.costBreakdown).filter(([k]) => re.test(k)).reduce((a, [, v]) => a + v, 0);
+  const royalty = sum(/royalt/i);
+  const freight = sum(/freight|handling|logistic|transport|barg|shipping/i);
+  const other = Math.max(0, fin.costOfRevenueUsd - royalty - freight);
+  return { royalty: royalty / tons, freight: freight / tons, other: other / tons };
+}
+
+export interface CostParts {
+  royalty: number;
+  freight: number;
+  other: number;
+}
+
 export interface CurveRow {
   symbol: string;
   slug: string;
@@ -58,6 +84,8 @@ export interface CurveRow {
   reserveLifeYears: number | null;
   stripRatio: number | null;
   economics: UnitEconomics | null;
+  /** Cost of revenue per ton split into royalty, freight & logistics, and everything else (USD/t). */
+  costParts: CostParts | null;
   coalShare: number | null;
   marketCapIdr: number | null;
   capPerTonIdr: number | null;
@@ -88,7 +116,11 @@ export async function loadCostCurve(mode: FetchMode = {}): Promise<CostCurveView
   if (companies === undefined) return empty;
 
   let incomplete = false;
-  const candidates: (CurveCandidate & { perf: CommodityYear | null; marketCapIdr: number | null })[] = [];
+  const candidates: (CurveCandidate & {
+    perf: CommodityYear | null;
+    marketCapIdr: number | null;
+    costParts: CostParts | null;
+  })[] = [];
   const ownership = new Map<string, Ownership>();
 
   for (const c of companies.filter((x): x is MiningCompanyRef & { symbol: string } => x.symbol !== null)) {
@@ -106,6 +138,7 @@ export async function loadCostCurve(mode: FetchMode = {}): Promise<CostCurveView
       year: fin?.year ?? null,
       salesMt: coal?.sales ?? null,
       economics: fin ? unitEconomics(fin, coal?.sales ?? null) : null,
+      costParts: fin ? costPartsPerTon(fin, coal?.sales ?? null) : null,
       coalShare: fin ? coalRevenueShare(fin) : null,
       perf: coal,
       marketCapIdr: await latestMarketCap(c.symbol, mode),
@@ -125,6 +158,7 @@ export async function loadCostCurve(mode: FetchMode = {}): Promise<CostCurveView
     reserveLifeYears: reserveLife(c.perf?.reservesTotal ?? null, c.perf?.production ?? null),
     stripRatio: c.perf?.stripRatio ?? null,
     economics: c.economics,
+    costParts: c.costParts,
     coalShare: c.coalShare,
     marketCapIdr: c.marketCapIdr,
     capPerTonIdr: marketCapPerTon(c.marketCapIdr, c.perf?.reservesTotal ?? null),
@@ -151,6 +185,7 @@ export interface ReserveYear {
   year: number;
   reservesMt: number | null;
   productionMt: number | null;
+  salesMt: number | null;
   replacement: number | null;
 }
 
@@ -172,6 +207,8 @@ export interface AssetBackingView {
   capPerTonIdr: number | null;
   /** Median market cap per ton of reserves across cost-curve companies, when loaded. */
   peerCapPerTonIdr: number | null;
+  /** Market cap per ton of reserves for each cost-curve company with one (for comparison). */
+  peerCaps: { symbol: string; capPerTonIdr: number }[];
   costPosition: CostPosition | null;
   /** Why there is no cost position, when there isn't one. */
   costNote: string | null;
@@ -186,6 +223,7 @@ const NOT_MINING: AssetBackingView = {
   runway: null,
   capPerTonIdr: null,
   peerCapPerTonIdr: null,
+  peerCaps: [],
   costPosition: null,
   costNote: null,
 };
@@ -209,7 +247,7 @@ export async function getAssetBacking(symbol: string, mode: FetchMode = {}): Pro
   perfs.sort((a, b) => a.year - b.year);
   const points = perfs.map((p) => {
     const c = primary(p);
-    return { year: p.year, reservesMt: c?.reservesTotal ?? null, productionMt: c?.production ?? null };
+    return { year: p.year, reservesMt: c?.reservesTotal ?? null, productionMt: c?.production ?? null, salesMt: c?.sales ?? null };
   });
   const history = points.map((p, i) => ({ ...p, replacement: i > 0 ? reserveReplacement(points[i - 1], p) : null }));
 
@@ -233,6 +271,7 @@ export async function getAssetBacking(symbol: string, mode: FetchMode = {}): Pro
     runway: detail ? licenseRunway(detail.licenses, todayWib()) : null,
     capPerTonIdr,
     peerCapPerTonIdr: median(peerCaps),
+    peerCaps: curve.rows.flatMap((r) => (r.capPerTonIdr !== null ? [{ symbol: r.symbol, capPerTonIdr: r.capPerTonIdr }] : [])),
     costPosition: seg
       ? { rank: idx + 1, of: curve.curve.segments.length, costPerTon: seg.costPerTon, aspPerTon: seg.aspPerTon, latestPrice: curve.latestPrice }
       : null,

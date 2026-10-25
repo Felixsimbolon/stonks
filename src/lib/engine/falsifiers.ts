@@ -100,6 +100,33 @@ function holdsAt(rule: FalsifierRule, data: PostMoveData, n: number): boolean | 
   return Math.abs(v) > rule.value;
 }
 
+export interface FalsifierPath {
+  metric: FalsifierMetric;
+  /** Session dates after the move, one per window day (only those already observed). */
+  dates: string[];
+  /** The metric after n sessions, n = 1..dates.length (null where not computable). */
+  values: (number | null)[];
+  /** Threshold line(s): one for > and <, two (±) for abs>. */
+  thresholds: number[];
+}
+
+/**
+ * The day-by-day path of a falsifier's metric, for charting it against its
+ * threshold. Compound rules chart their first price-based component.
+ */
+export function falsifierPath(rule: FalsifierRule, data: PostMoveData): FalsifierPath | null {
+  const simple = "all" in rule ? rule.all.find((r) => !("all" in r) && r.metric !== "avg_volume_ratio") ?? rule.all[0] : rule;
+  if (!simple || "all" in simple) return null;
+  const after = data.bars.filter((b) => b.date > data.move.date).slice(0, simple.window);
+  const values = after.map((_, i) => metricValue(simple.metric, data, i + 1));
+  return {
+    metric: simple.metric,
+    dates: after.map((b) => b.date),
+    values,
+    thresholds: simple.op === "abs>" ? [simple.value, -simple.value] : [simple.value],
+  };
+}
+
 export function evaluateFalsifier(rule: FalsifierRule, data: PostMoveData): FalsifierEvaluation {
   const window = windowOf(rule);
   const after = data.bars.filter((b) => b.date > data.move.date);
