@@ -127,7 +127,14 @@ async function ensureBars(
           .values({ ticker: key, ...bar })
           .onConflictDoUpdate({
             target: [schema.priceBars.ticker, schema.priceBars.date],
-            set: { open: bar.open, high: bar.high, low: bar.low, close: bar.close, volume: bar.volume },
+            set: {
+              open: bar.open,
+              high: bar.high,
+              low: bar.low,
+              close: bar.close,
+              volume: bar.volume,
+              marketCap: bar.marketCap ?? null,
+            },
           });
       }
     },
@@ -142,6 +149,7 @@ async function ensureBars(
       low: schema.priceBars.low,
       close: schema.priceBars.close,
       volume: schema.priceBars.volume,
+      marketCap: schema.priceBars.marketCap,
     })
     .from(schema.priceBars)
     .where(and(eq(schema.priceBars.ticker, key), between(schema.priceBars.date, from, to)))

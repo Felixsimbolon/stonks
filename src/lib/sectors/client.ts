@@ -31,6 +31,8 @@ export interface GetOptions {
   credits?: number;
   /** Never call Sectors: return the cached payload even if stale, or throw NotCachedError. */
   cacheOnly?: boolean;
+  /** Return (and cache) null on 404 instead of throwing — for "this resource has no data". */
+  allowNotFound?: boolean;
 }
 
 const isBilled = (status: number) => (status >= 200 && status < 300) || status === 404;
@@ -53,7 +55,10 @@ async function fetchWithRetry(url: string, key: string): Promise<Response> {
 }
 
 /** GET a Sectors v2 path such as `/daily/BBCA/?start=...`. */
-export async function sectorsGet<T>(path: string, { ttlMs, credits = 1, cacheOnly = false }: GetOptions): Promise<T> {
+export async function sectorsGet<T>(
+  path: string,
+  { ttlMs, credits = 1, cacheOnly = false, allowNotFound = false }: GetOptions,
+): Promise<T> {
   const now = Date.now();
 
   if (ttlMs > 0 || cacheOnly) {
@@ -76,6 +81,11 @@ export async function sectorsGet<T>(path: string, { ttlMs, credits = 1, cacheOnl
   if (isBilled(res.status)) {
     await db.insert(schema.apiCalls).values({ path, status: res.status, credits });
   }
+  // An expected "no data for this resource" is cached as null, so it is not re-billed.
+  if (res.status === 404 && allowNotFound) {
+    if (ttlMs > 0) await cachePayload(path, "null", now, ttlMs);
+    return null as T;
+  }
   if (!res.ok) {
     let message = body.slice(0, 300);
     try {
@@ -85,14 +95,16 @@ export async function sectorsGet<T>(path: string, { ttlMs, credits = 1, cacheOnl
     throw new SectorsError(res.status, path, message);
   }
 
-  if (ttlMs > 0) {
-    const row = {
-      path,
-      payload: body,
-      fetchedAt: new Date(now),
-      expiresAt: Number.isFinite(ttlMs) ? new Date(now + ttlMs) : null,
-    };
-    await db.insert(schema.apiCache).values(row).onConflictDoUpdate({ target: schema.apiCache.path, set: row });
-  }
+  if (ttlMs > 0) await cachePayload(path, body, now, ttlMs);
   return JSON.parse(body) as T;
+}
+
+async function cachePayload(path: string, payload: string, now: number, ttlMs: number) {
+  const row = {
+    path,
+    payload,
+    fetchedAt: new Date(now),
+    expiresAt: Number.isFinite(ttlMs) ? new Date(now + ttlMs) : null,
+  };
+  await db.insert(schema.apiCache).values(row).onConflictDoUpdate({ target: schema.apiCache.path, set: row });
 }

@@ -9,6 +9,7 @@ export interface Bar {
   low: number;
   close: number;
   volume: number;
+  marketCap?: number | null; // IDR; stocks only, absent on bars stored before it was kept
 }
 
 export type MoveTrigger = "abnormal_return" | "volume_spike" | "gap";

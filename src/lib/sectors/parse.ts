@@ -47,6 +47,7 @@ export function parseDaily(rows: DailyRow[]): Bar[] {
       low: r.low ?? r.close,
       close: r.close,
       volume: r.volume,
+      marketCap: r.market_cap ?? null,
     }))
     .sort((a, b) => a.date.localeCompare(b.date));
 }

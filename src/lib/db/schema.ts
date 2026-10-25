@@ -20,6 +20,7 @@ export const priceBars = sqliteTable(
     low: real("low").notNull(),
     close: real("close").notNull(),
     volume: real("volume").notNull(),
+    marketCap: real("market_cap"), // IDR; null for indices and bars stored before it was kept
   },
   (t) => [primaryKey({ columns: [t.ticker, t.date] })],
 );
