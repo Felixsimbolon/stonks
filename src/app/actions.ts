@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { checkOpenCases, fileCase } from "@/lib/casebook/store";
 import { investigateMove, scanTicker } from "@/lib/pipeline";
 import { SectorsError, creditsUsed } from "@/lib/sectors";
 import { TICKER_RE, addToWatchlist, listWatchlist, removeFromWatchlist } from "@/lib/views";
@@ -11,6 +12,8 @@ export interface FetchResult {
   error?: string;
   /** Credits this action spent. */
   used?: number;
+  /** Shown instead of the default credit summary. */
+  message?: string;
 }
 
 const message = (e: unknown) =>
@@ -69,6 +72,40 @@ export async function refreshAll(): Promise<FetchResult> {
   });
   revalidatePath("/");
   return r;
+}
+
+// ── Case files (local only, 0 credits) ─────────────────────────────────
+
+/** Freeze the current investigation of a move as a case file (or re-file an open one). */
+export async function fileCaseAction(ticker: string, date: string): Promise<FetchResult> {
+  try {
+    await fileCase(ticker, date);
+  } catch (e) {
+    return { error: message(e) };
+  }
+  revalidatePath(`/${ticker}`);
+  revalidatePath("/cases");
+  return { message: "case filed · 0 credits" };
+}
+
+/** Re-check every open case against the sessions already stored. */
+export async function checkCasesAction(): Promise<FetchResult> {
+  let s;
+  try {
+    s = await checkOpenCases();
+  } catch (e) {
+    return { error: message(e) };
+  }
+  revalidatePath("/cases");
+  revalidatePath("/", "layout");
+  if (s.checked === 0) return { message: "no open cases · 0 credits" };
+  const parts = [
+    `${s.checked} open case${s.checked === 1 ? "" : "s"} checked`,
+    s.broke && `${s.broke} broke`,
+    s.held && `${s.held} held`,
+    s.closed && `${s.closed} closed`,
+  ].filter(Boolean);
+  return { message: `${parts.join(" · ")} · 0 credits` };
 }
 
 /** Fetch peers, peer history and corporate actions needed to investigate one move. */

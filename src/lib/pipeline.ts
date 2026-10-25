@@ -10,6 +10,7 @@ import {
   type Investigation,
   type Move,
   type NewsItem,
+  type PostMoveData,
   NOT_NEEDED_BELOW,
 } from "@/lib/engine";
 import {
@@ -144,6 +145,27 @@ export async function investigateMove(
       news: needStockEvidence && news === null,
     },
   };
+}
+
+/**
+ * Everything a frozen falsifier needs to be re-checked, from the local store
+ * only (never calls Sectors). `asOf` is the latest stored session of the stock.
+ */
+export async function loadPostMoveData(ticker: string, move: Move): Promise<PostMoveData & { asOf: string | null }> {
+  const t = ticker.toUpperCase();
+  const to = todayWib();
+  // A few sessions before the move so the move-day return can be computed.
+  const from = addDays(move.date, -10);
+  const bars = await getDailyBars(t, from, to);
+  const marketBars = await getIndexBars(MARKET_INDEX, from, to);
+  const peerInfo = await orMissing(getPeers(t));
+  const peers: Record<string, Bar[]> = {};
+  for (const p of peerInfo?.peers ?? []) {
+    const peerBars = await getDailyBars(p, from, to);
+    if (peerBars.length > 0) peers[p] = peerBars;
+  }
+  const flows = await getForeignFlows(t, from, to);
+  return { move, bars, marketBars, peers, flows: flows ?? undefined, asOf: bars.at(-1)?.date ?? null };
 }
 
 /** Resolve to null when the data was never fetched (read-only mode). */

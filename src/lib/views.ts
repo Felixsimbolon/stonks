@@ -1,7 +1,9 @@
-import { asc, eq } from "drizzle-orm";
+import { asc, count, eq } from "drizzle-orm";
+import { headlineRecord, recordNote, type Tally, type TrackRow } from "@/lib/casebook/logic";
+import { getCase, getTrackRecord, listCases, type CaseView } from "@/lib/casebook/store";
 import { db, schema } from "@/lib/db";
 import { env } from "@/lib/env";
-import { windowOf, type Move } from "@/lib/engine";
+import { windowOf, type HypothesisType, type Move } from "@/lib/engine";
 import { investigateMove, scanTicker, type InvestigationResult } from "@/lib/pipeline";
 import { creditsUsed } from "@/lib/sectors";
 
@@ -87,6 +89,10 @@ export interface TickerView {
   selected: string | null;
   dataThrough: string | null;
   result: (InvestigationResult & { windows: number[] }) | null;
+  /** The case file for the selected move, if one was filed. */
+  caseFile: CaseView | null;
+  /** Per explanation: a one-line track record from closed cases, or null. */
+  trackNotes: Partial<Record<HypothesisType, string | null>>;
   error?: string;
 }
 
@@ -101,6 +107,9 @@ export async function getTickerView(ticker: string, date?: string): Promise<Tick
       const r = await investigateMove(scan, move);
       result = { ...r, windows: r.falsifiers.map((f) => windowOf(f.rule)) };
     }
+    const caseFile = move ? await getCase(ticker, move.date) : null;
+    const record = await getTrackRecord();
+    const trackNotes = Object.fromEntries(record.map((row) => [row.type, recordNote(row)]));
     return {
       ticker,
       prices: scan.bars.slice(-120).map((b) => ({ date: b.date, close: b.close })),
@@ -108,8 +117,40 @@ export async function getTickerView(ticker: string, date?: string): Promise<Tick
       selected: move?.date ?? null,
       dataThrough: scan.bars.at(-1)?.date ?? null,
       result,
+      caseFile,
+      trackNotes,
     };
   } catch (e) {
-    return { ticker, prices: [], moves: [], selected: null, dataThrough: null, result: null, error: errorMessage(e) };
+    return {
+      ticker,
+      prices: [],
+      moves: [],
+      selected: null,
+      dataThrough: null,
+      result: null,
+      caseFile: null,
+      trackNotes: {},
+      error: errorMessage(e),
+    };
   }
+}
+
+export interface CasesView {
+  cases: CaseView[];
+  record: TrackRow[];
+  headline: Tally;
+}
+
+export async function getCasesView(): Promise<CasesView> {
+  const cases = await listCases();
+  const record = await getTrackRecord(cases);
+  return { cases, record, headline: headlineRecord(record) };
+}
+
+export async function countOpenCases(): Promise<number> {
+  const [row] = await db
+    .select({ n: count() })
+    .from(schema.investigations)
+    .where(eq(schema.investigations.status, "open"));
+  return row?.n ?? 0;
 }
