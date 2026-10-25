@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "motion/react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FetchResult } from "@/app/actions";
 import type { LlmUsage } from "@/lib/llm/client";
 import type { Fact } from "@/lib/llm/guardrails";
@@ -70,6 +70,23 @@ export function AiSummary({
   generate: () => Promise<FetchResult>;
 }) {
   const [showFacts, setShowFacts] = useState(false);
+  const stale = stored !== null && dataThrough !== null && stored.dataThrough !== null && dataThrough > stored.dataThrough;
+
+  // Written automatically when the page opens, but only when there is no
+  // summary yet or new sessions have come in since: an up-to-date summary is
+  // shown from storage without calling Claude.
+  const needsSummary = llm.configured && (!stored || stale);
+  const [auto, setAuto] = useState<{ state: "idle" | "writing" | "error"; message?: string }>({ state: "idle" });
+  const started = useRef(false);
+  useEffect(() => {
+    if (!needsSummary || started.current) return;
+    started.current = true;
+    setAuto({ state: "writing" });
+    generate()
+      .then((r) => setAuto(r.error ? { state: "error", message: r.error } : { state: "idle" }))
+      .catch(() => setAuto({ state: "error", message: "Could not write the summary." }));
+  }, [needsSummary, generate]);
+
   const button = (
     <FetchButton
       action={generate}
@@ -94,18 +111,40 @@ export function AiSummary({
         <p className="display text-3xl leading-tight text-muted">
           The story of {ticker} so far, <em className="gradient-text">in plain words.</em>
         </p>
-        <p className="mt-3 text-sm leading-relaxed text-faint">
-          Claude writes it only from the numbered facts the engine computes below. Every number is checked against those facts, and
-          anything that reads like advice is removed before you see it.
-        </p>
-        <div className="mt-5">{button}</div>
+        {auto.state === "error" ? (
+          <>
+            <p className="mt-3 text-sm text-down">{auto.message}</p>
+            <div className="mt-5">{button}</div>
+          </>
+        ) : (
+          <>
+            <p className="mt-3 flex items-center gap-2 text-sm text-faint">
+              <motion.span
+                className="block h-1.5 w-1.5 rounded-full bg-[var(--c-series)]"
+                animate={{ opacity: [0.3, 1, 0.3] }}
+                transition={{ repeat: Infinity, duration: 1.2 }}
+              />
+              Claude is reading the engine&apos;s facts and writing. Every number is checked against those facts, and anything that
+              reads like advice is removed before you see it.
+            </p>
+            <div className="mt-6 space-y-3">
+              {[0.92, 0.78, 0.85, 0.6].map((w, i) => (
+                <div key={i} className="relative h-3 overflow-hidden rounded-full bg-white/[0.04]" style={{ width: `${w * 100}%` }}>
+                  <div
+                    className="absolute inset-y-0 w-1/3 animate-[shimmer_1.6s_ease-in-out_infinite]"
+                    style={{ background: "linear-gradient(90deg, transparent, rgb(255 255 255 / 0.08), transparent)", animationDelay: `${i * 0.15}s` }}
+                  />
+                </div>
+              ))}
+            </div>
+          </>
+        )}
       </div>
     );
   }
 
   const s = stored.summary;
   const byId = new Map(stored.facts.map((f) => [f.id, f]));
-  const stale = dataThrough !== null && stored.dataThrough !== null && dataThrough > stored.dataThrough;
 
   return (
     <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, ease }}>
@@ -150,7 +189,11 @@ export function AiSummary({
           </p>
           {stale && (
             <p className="mt-1 text-ink">
-              New sessions have come in since this was written (data through {shortDate(dataThrough!)}). Rewrite it to catch up.
+              {auto.state === "writing"
+                ? `New sessions have come in (data through ${shortDate(dataThrough!)}); Claude is rewriting this…`
+                : auto.state === "error"
+                  ? `Couldn't update for the new sessions: ${auto.message}`
+                  : `New sessions have come in since this was written (data through ${shortDate(dataThrough!)}).`}
             </p>
           )}
           <button

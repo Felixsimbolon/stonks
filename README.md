@@ -27,7 +27,9 @@ summary only from numbered facts the engine computes, and answers questions thro
 tools over the local store. Our own guardrails sit around the model: every number in a summary
 must appear in the facts it cites, uncited or advice-like parts are dropped, a finished chat
 answer that reads as a buy/sell call, price target or prediction is withheld, and a daily token
-cap (`LLM_DAILY_TOKEN_LIMIT`) bounds spend. Nothing calls Claude unless you click.
+cap (`LLM_DAILY_TOKEN_LIMIT`) bounds spend. A stock's summary is written automatically when its
+page opens, but only if there is none yet or new sessions have arrived since; otherwise the stored
+one is shown without calling Claude. Chat only runs when you ask.
 
 Every number comes from code in [`src/lib/engine`](src/lib/engine), never from an LLM.
 

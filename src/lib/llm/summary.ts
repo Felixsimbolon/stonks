@@ -67,9 +67,22 @@ function describeIssues(label: string, issues: PointIssue[]): string[] {
   return issues.map((i) => `${label} ${i.index + 1}: ${i.problems.join("; ")}`);
 }
 
-/** Generate, check, retry once with the problems, drop what still fails, store. */
-export async function generateSummary(ticker: string): Promise<StockSummary> {
+// Summaries now start automatically when a page opens; two tabs (or React's
+// dev double-mount) must not pay for the same summary twice.
+const inFlight = new Map<string, Promise<StockSummary>>();
+
+/** Generate (or join an in-flight generation of) a ticker's summary. */
+export function generateSummary(ticker: string): Promise<StockSummary> {
   const t = ticker.toUpperCase();
+  const running = inFlight.get(t);
+  if (running) return running;
+  const p = writeSummary(t).finally(() => inFlight.delete(t));
+  inFlight.set(t, p);
+  return p;
+}
+
+/** Generate, check, retry once with the problems, drop what still fails, store. */
+async function writeSummary(t: string): Promise<StockSummary> {
   const { facts, dataThrough } = await buildStockFacts(t);
   if (facts.length < 3) throw new LlmError(`Not enough stored data on ${t} to summarize. Update prices first.`);
   await assertBudget();

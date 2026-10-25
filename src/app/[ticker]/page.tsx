@@ -73,6 +73,7 @@ export default async function TickerPage({
         <FadeIn delay={0.18} className="mt-14">
           <p className="eyebrow mb-5">ai summary</p>
           <AiSummary
+            key={ticker}
             ticker={ticker}
             stored={view.summary}
             dataThrough={view.dataThrough}
