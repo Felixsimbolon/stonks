@@ -278,7 +278,7 @@ describe("hypotheses", () => {
 
   // ── posterior ──
   it("gives stock-level explanations probabilities that sum to 1 with 'something not tested'", () => {
-    const inv = investigate(input(-0.06, 0, { flows: flowsAround(-20e9), news: [] }));
+    const inv = investigate(input(-0.06, 0, { flows: flowsAround(-20e9), news: [] }, { stockVolume: 1 }));
     const probs = inv.hypotheses.flatMap((h) => (h.probability === undefined ? [] : [h.probability]));
     expect(probs.length).toBeGreaterThan(0);
     expect(probs.reduce((a, p) => a + p, 0) + inv.otherProbability!).toBeCloseTo(1, 10);
@@ -287,7 +287,8 @@ describe("hypotheses", () => {
   });
 
   it("sends probability to 'something not tested' when nothing fits", () => {
-    const inv = investigate(input(-0.06, 0, { news: [], suspensions: [] }));
+    // normal volume, no news, no suspension: nothing tested explains the drop
+    const inv = investigate(input(-0.06, 0, { news: [], suspensions: [] }, { stockVolume: 1 }));
     const best = Math.max(...inv.hypotheses.flatMap((h) => (h.probability === undefined ? [] : [h.probability])));
     expect(inv.otherProbability!).toBeGreaterThan(best);
   });
