@@ -1,5 +1,15 @@
 import { asc, count, eq } from "drizzle-orm";
-import { headlineRecord, recordNote, type Tally, type TrackRow } from "@/lib/casebook/logic";
+import {
+  brierScore,
+  calibrationPoints,
+  headlineRecord,
+  priorsFromTrackRecord,
+  recordNote,
+  reliabilityBins,
+  type ReliabilityBin,
+  type Tally,
+  type TrackRow,
+} from "@/lib/casebook/logic";
 import { getCase, getTrackRecord, listCases, type CaseView } from "@/lib/casebook/store";
 import { db, schema } from "@/lib/db";
 import { env } from "@/lib/env";
@@ -203,13 +213,15 @@ export async function getTickerView(ticker: string, date?: string): Promise<Tick
     const moves = scan.moves;
     // Default to the most recent flagged move.
     const move = moves.find((m) => m.date === date) ?? moves.at(-1) ?? null;
+    // The track record sets the engine's prior weights per explanation.
+    const record = await getTrackRecord();
+    const priors = priorsFromTrackRecord(record);
     let result: TickerView["result"] = null;
     if (move) {
-      const r = await investigateMove(scan, move);
+      const r = await investigateMove(scan, move, { priors });
       result = { ...r, windows: r.falsifiers.map((f) => windowOf(f.rule)) };
     }
     const caseFile = move ? await getCase(ticker, move.date) : null;
-    const record = await getTrackRecord();
     const trackNotes = Object.fromEntries(record.map((row) => [row.type, recordNote(row)]));
     const charted = scan.bars.slice(-120);
     const flagged = new Set(moves.map((m) => m.date));
@@ -255,12 +267,21 @@ export interface CasesView {
   cases: CaseView[];
   record: TrackRow[];
   headline: Tally;
+  calibration: { points: number; brier: number | null; bins: ReliabilityBin[] };
 }
 
 export async function getCasesView(): Promise<CasesView> {
   const cases = await listCases();
   const record = await getTrackRecord(cases);
-  return { cases, record, headline: headlineRecord(record) };
+  const points = calibrationPoints(
+    cases.filter((c) => c.status === "closed").map((c) => ({ hypotheses: c.hypotheses, outcomes: c.outcomes })),
+  );
+  return {
+    cases,
+    record,
+    headline: headlineRecord(record),
+    calibration: { points: points.length, brier: brierScore(points), bins: reliabilityBins(points) },
+  };
 }
 
 export async function countOpenCases(): Promise<number> {

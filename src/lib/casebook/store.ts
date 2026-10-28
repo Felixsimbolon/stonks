@@ -21,6 +21,7 @@ import {
   isResolved,
   isStanding,
   outcomes,
+  priorsFromTrackRecord,
   trackRecord,
   type CaseEvent,
   type FalsifierState,
@@ -98,7 +99,7 @@ export async function fileCase(ticker: string, date: string): Promise<number> {
   const scan = await scanTicker(t);
   const move = scan.moves.find((m) => m.date === date);
   if (!move) throw new Error(`No flagged move for ${t} on ${date}.`);
-  const r = await investigateMove(scan, move);
+  const r = await investigateMove(scan, move, { priors: priorsFromTrackRecord(await getTrackRecord()) });
   const inv = r.investigation;
 
   let [mv] = await db

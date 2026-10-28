@@ -12,6 +12,7 @@ import {
   type EventStudy,
   type FalsifierPath,
   type GroupData,
+  type HypothesisType,
   type Investigation,
   type Move,
   type NewsItem,
@@ -124,7 +125,7 @@ async function loadGroups(
 export async function investigateMove(
   scan: ScanResult,
   move: Move,
-  { refresh = false }: FetchMode = {},
+  { refresh = false, priors }: FetchMode & { priors?: Partial<Record<HypothesisType, number>> } = {},
 ): Promise<InvestigationResult> {
   const { ticker, bars, market } = scan;
   const to = todayWib();
@@ -175,6 +176,7 @@ export async function investigateMove(
     brokers: brokers ?? undefined,
     suspensions: suspensions ?? undefined,
     groups,
+    priors,
     sources: {
       stock: sourceOf.daily(ticker),
       market: sourceOf.index(MARKET_INDEX),

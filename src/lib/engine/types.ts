@@ -153,6 +153,8 @@ export interface InvestigationInput {
   brokers?: BrokerDay[]; // per-broker activity for the sessions up to and including the move
   suspensions?: Suspension[]; // IDX suspension notices around the move
   groups?: GroupData[]; // conglomerate groups the stock belongs to ([] = none)
+  /** Relative prior weight per explanation (1 = neutral), e.g. from the track record. */
+  priors?: Partial<Record<HypothesisType, number>>;
   sources: {
     stock: string;
     market: string;
@@ -172,6 +174,12 @@ export interface HypothesisResult {
   score: number; // 0..1, higher = better explains the move
   rationale: string;
   evidenceIds: string[];
+  /**
+   * Stock-level explanations only: posterior probability that this is the
+   * main driver of the stock-specific part, among the explanations tested
+   * plus "something not tested".
+   */
+  probability?: number;
 }
 
 export interface Investigation {
@@ -180,4 +188,6 @@ export interface Investigation {
   decomposition: Decomposition;
   evidence: Evidence[];
   hypotheses: HypothesisResult[]; // ranked, best first
+  /** Posterior that the stock-specific part came from something none of the tests cover. */
+  otherProbability?: number;
 }

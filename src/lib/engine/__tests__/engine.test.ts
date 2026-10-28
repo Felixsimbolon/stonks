@@ -276,6 +276,35 @@ describe("hypotheses", () => {
     for (const t of ["broker_concentration", "exchange_action", "group_contagion"]) expect(verdictOf(inv, t)).toBe("untested");
   });
 
+  // ── posterior ──
+  it("gives stock-level explanations probabilities that sum to 1 with 'something not tested'", () => {
+    const inv = investigate(input(-0.06, 0, { flows: flowsAround(-20e9), news: [] }));
+    const probs = inv.hypotheses.flatMap((h) => (h.probability === undefined ? [] : [h.probability]));
+    expect(probs.length).toBeGreaterThan(0);
+    expect(probs.reduce((a, p) => a + p, 0) + inv.otherProbability!).toBeCloseTo(1, 10);
+    const ff = inv.hypotheses.find((h) => h.type === "foreign_flow")!;
+    expect(ff.probability!).toBe(Math.max(...probs));
+  });
+
+  it("sends probability to 'something not tested' when nothing fits", () => {
+    const inv = investigate(input(-0.06, 0, { news: [], suspensions: [] }));
+    const best = Math.max(...inv.hypotheses.flatMap((h) => (h.probability === undefined ? [] : [h.probability])));
+    expect(inv.otherProbability!).toBeGreaterThan(best);
+  });
+
+  it("leaves market and sector without probabilities, and none when nothing stock-specific is left", () => {
+    const inv = investigate(input(-0.06, -0.06));
+    expect(inv.hypotheses.find((h) => h.type === "market_beta")!.probability).toBeUndefined();
+    expect(inv.otherProbability).toBeUndefined();
+  });
+
+  it("lets track-record priors shift the posterior", () => {
+    const base = investigate(input(-0.06, 0, { flows: flowsAround(-20e9), news: [] }));
+    const tilted = investigate(input(-0.06, 0, { flows: flowsAround(-20e9), news: [], priors: { foreign_flow: 0.2 } }));
+    const p = (inv: ReturnType<typeof investigate>) => inv.hypotheses.find((h) => h.type === "foreign_flow")!.probability!;
+    expect(p(tilted)).toBeLessThan(p(base));
+  });
+
   it("cites evidence that exists on the board", () => {
     const inv = investigate(input(-0.06, -0.06));
     const ids = new Set(inv.evidence.map((e) => e.id));

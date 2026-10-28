@@ -409,6 +409,65 @@ const TESTS: Test[] = [
 
 const RANK: Record<Verdict, number> = { supported: 0, partial: 0, weak: 0, refuted: 0, not_needed: 1, untested: 2 };
 
+// ── Posterior over stock-level explanations ──────────────────────────────
+// The scores above are evidence strengths. To say how likely each one is to
+// be the main driver of the stock-specific part, combine them Bayesianly:
+//   posterior(h) ∝ prior(h) × likelihood(evidence | h)
+// with a reserved "something we didn't test" option, so that when nothing
+// fits, the probability goes there instead of to the least-bad explanation.
+
+export const STOCK_LEVEL: HypothesisType[] = [
+  "earnings",
+  "dividend",
+  "liquidity",
+  "foreign_flow",
+  "news",
+  "broker_concentration",
+  "exchange_action",
+  "group_contagion",
+  "noise",
+];
+
+/** Prior mass on "something not tested" (filings, rumors, intraday news, …). */
+export const OTHER_PRIOR = 0.2;
+/** How well "something not tested" fits any evidence: middling by construction. */
+export const OTHER_LIKELIHOOD = 0.3;
+
+export interface Posterior {
+  probabilities: Partial<Record<HypothesisType, number>>;
+  other: number;
+}
+
+/**
+ * Posterior over the stock-level explanations that were actually tested and
+ * needed. Strength = the share of the stock-specific part an explanation
+ * accounts for (score / stock-specific share); likelihood = 0.05 + 0.95 ×
+ * strength, so even a refuted explanation keeps a little probability.
+ */
+export function stockLevelPosterior(
+  hypotheses: HypothesisResult[],
+  stockShare: number,
+  priors: Partial<Record<HypothesisType, number>> = {},
+): Posterior | null {
+  const candidates = hypotheses.filter(
+    (h) => STOCK_LEVEL.includes(h.type) && h.verdict !== "untested" && h.verdict !== "not_needed",
+  );
+  if (candidates.length === 0 || stockShare <= 0) return null;
+  const weights = candidates.map((h) => Math.max(0, priors[h.type] ?? 1));
+  const totalWeight = weights.reduce((a, w) => a + w, 0) || 1;
+  const joint = candidates.map((h, i) => {
+    const strength = clamp01(h.score / stockShare);
+    const prior = ((1 - OTHER_PRIOR) * weights[i]) / totalWeight;
+    return prior * (0.05 + 0.95 * strength);
+  });
+  const other = OTHER_PRIOR * OTHER_LIKELIHOOD;
+  const z = joint.reduce((a, j) => a + j, 0) + other;
+  return {
+    probabilities: Object.fromEntries(candidates.map((h, i) => [h.type, joint[i] / z])),
+    other: other / z,
+  };
+}
+
 export function investigate(input: InvestigationInput): Investigation {
   const { move, sources } = input;
   const d = decompose(move, input.bars, input.marketBars, input.peers);
@@ -425,8 +484,17 @@ export function investigate(input: InvestigationInput): Investigation {
     volume: board.add({ kind: "volume_ratio", label: "Volume vs 20-day average", value: move.volumeRatio, source: sources.stock }),
   };
 
-  const hypotheses = TESTS.map((t) => t({ input, d, board, ids })).sort(
-    (a, b) => RANK[a.verdict] - RANK[b.verdict] || b.score - a.score,
-  );
-  return { ticker: input.ticker, move, decomposition: d, evidence: board.items, hypotheses };
+  const tested = TESTS.map((t) => t({ input, d, board, ids }));
+  const post = stockLevelPosterior(tested, d.shares.stockSpecific, input.priors);
+  const hypotheses = tested
+    .map((h) => (post && h.type in post.probabilities ? { ...h, probability: post.probabilities[h.type] } : h))
+    .sort((a, b) => RANK[a.verdict] - RANK[b.verdict] || b.score - a.score);
+  return {
+    ticker: input.ticker,
+    move,
+    decomposition: d,
+    evidence: board.items,
+    hypotheses,
+    otherProbability: post?.other,
+  };
 }

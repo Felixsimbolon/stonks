@@ -2,12 +2,16 @@ import { describe, expect, it } from "vitest";
 import type { FalsifierEvaluation, HypothesisResult } from "@/lib/engine";
 import {
   advance,
+  brierScore,
+  calibrationPoints,
   closingDate,
   closingMessage,
   headlineRecord,
   isResolved,
   outcomes,
+  priorsFromTrackRecord,
   recordNote,
+  reliabilityBins,
   trackRecord,
   type ClosedCase,
   type FalsifierState,
@@ -121,6 +125,40 @@ describe("resolution and outcomes", () => {
       "Case closed — held: Market moved it; broke: Sector moved it.",
     );
     expect(closingMessage({})).toBe("Case closed — no explanation was standing.");
+  });
+});
+
+describe("priors and calibration", () => {
+  it("turns the track record into smoothed prior weights", () => {
+    const rows = trackRecord([
+      ...Array.from({ length: 8 }, () => ({ hypotheses: [h("market_beta", "supported")], outcomes: { market_beta: "held" as const } })),
+      { hypotheses: [h("news", "supported")], outcomes: { news: "broke" as const } },
+    ]);
+    const priors = priorsFromTrackRecord(rows);
+    expect(priors.market_beta!).toBeCloseTo((8 + 1) / (8 + 2) / 0.5);
+    expect(priors.news!).toBeCloseTo(1 / 3 / 0.5);
+    expect(priors.market_beta!).toBeGreaterThan(1);
+    expect(priors.news!).toBeLessThan(1);
+  });
+
+  it("scores stated probabilities against outcomes", () => {
+    const closed: ClosedCase[] = [
+      { hypotheses: [{ ...h("news", "supported"), probability: 0.9 }], outcomes: { news: "held" } },
+      { hypotheses: [{ ...h("news", "weak"), probability: 0.2 }], outcomes: { news: "broke" } },
+      { hypotheses: [{ ...h("noise", "weak"), probability: 0.6 }], outcomes: { noise: "pending" } },
+      { hypotheses: [h("market_beta", "supported")], outcomes: { market_beta: "held" } },
+    ];
+    const pts = calibrationPoints(closed);
+    expect(pts).toEqual([
+      { type: "news", p: 0.9, held: true },
+      { type: "news", p: 0.2, held: false },
+    ]);
+    expect(brierScore(pts)).toBeCloseTo((0.01 + 0.04) / 2);
+    expect(brierScore([])).toBeNull();
+    const bins = reliabilityBins(pts, 5);
+    expect(bins[4]).toMatchObject({ n: 1, heldRate: 1 });
+    expect(bins[1]).toMatchObject({ n: 1, heldRate: 0 });
+    expect(bins[2].n).toBe(0);
   });
 });
 

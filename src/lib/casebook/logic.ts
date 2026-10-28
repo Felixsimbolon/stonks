@@ -121,7 +121,7 @@ export function closingMessage(o: Partial<Record<HypothesisType, Outcome>>): str
 // ── Track record ─────────────────────────────────────────────────────────
 
 export interface ClosedCase {
-  hypotheses: Pick<HypothesisResult, "type" | "verdict">[];
+  hypotheses: Pick<HypothesisResult, "type" | "verdict" | "probability">[];
   outcomes: Partial<Record<HypothesisType, Outcome>>;
 }
 
@@ -186,6 +186,68 @@ export function recordNote(row: TrackRow | undefined): string | null {
     return `Track record: held ${held} of ${filed} closed case${filed === 1 ? "" : "s"} — too few to judge.`;
   }
   return `Track record: held in ${held} of ${filed} closed cases (${Math.round((held / filed) * 100)}%).`;
+}
+
+// ── Priors and calibration ───────────────────────────────────────────────
+
+/**
+ * Prior weights for the engine from the track record: an explanation that
+ * held more often gets more prior weight. Laplace-smoothed hold rate,
+ * relative to a coin flip (1 = neutral), so a couple of cases barely move it.
+ */
+export function priorsFromTrackRecord(rows: TrackRow[]): Partial<Record<HypothesisType, number>> {
+  return Object.fromEntries(rows.map((r) => [r.type, (r.total.held + 1) / (r.total.filed + 2) / 0.5]));
+}
+
+export interface CalibrationPoint {
+  type: HypothesisType;
+  p: number; // the engine's probability when the case was filed
+  held: boolean; // its falsifiers survived
+}
+
+/**
+ * The engine's stated probabilities against what happened. "Held" means the
+ * explanation survived its own falsifiers: the closest observable proxy for
+ * "was right", not a direct measure of it.
+ */
+export function calibrationPoints(cases: ClosedCase[]): CalibrationPoint[] {
+  return cases.flatMap((c) =>
+    c.hypotheses.flatMap((h) => {
+      const o = c.outcomes[h.type];
+      if (h.probability === undefined || (o !== "held" && o !== "broke")) return [];
+      return [{ type: h.type, p: h.probability, held: o === "held" }];
+    }),
+  );
+}
+
+/** Brier score: mean squared gap between probability and outcome (0 is perfect, 0.25 is a coin flip at 50%). */
+export function brierScore(points: CalibrationPoint[]): number | null {
+  if (points.length === 0) return null;
+  return points.reduce((a, x) => a + (x.p - (x.held ? 1 : 0)) ** 2, 0) / points.length;
+}
+
+export interface ReliabilityBin {
+  lo: number;
+  hi: number;
+  n: number;
+  meanP: number | null;
+  heldRate: number | null;
+}
+
+/** Group predictions into probability bins and compare each bin's average probability with its hold rate. */
+export function reliabilityBins(points: CalibrationPoint[], bins = 5): ReliabilityBin[] {
+  return Array.from({ length: bins }, (_, i) => {
+    const lo = i / bins;
+    const hi = (i + 1) / bins;
+    const inBin = points.filter((x) => x.p >= lo && (i === bins - 1 ? x.p <= hi : x.p < hi));
+    return {
+      lo,
+      hi,
+      n: inBin.length,
+      meanP: inBin.length ? inBin.reduce((a, x) => a + x.p, 0) / inBin.length : null,
+      heldRate: inBin.length ? inBin.filter((x) => x.held).length / inBin.length : null,
+    };
+  });
 }
 
 function lowerFirst(s: string) {
