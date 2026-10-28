@@ -14,10 +14,19 @@ explanation holds, and know what would prove it wrong.
    hypothesis "just noise") with deterministic checks, plus a surveillance desk borrowed from
    other fields: broker concentration (exchange surveillance), IDX suspensions (the regulator), and
    conglomerate-group co-movement (network analysis).
+   The statistics are done the way empirical finance does them: unusual sessions are flagged by a
+   stated false-alarm rate under a heavy-tailed model (≈0.5 false flags per 60 sessions), each move
+   gets an event study (abnormal returns and CARs with significance), stock-level explanations get
+   Bayesian probabilities with a reserved "something not tested" option and track-record priors,
+   and sessions possibly capped by an IDX auto-rejection limit or a halt are marked.
 4. **Falsify:** attach machine-checkable conditions that would prove each surviving story wrong.
 5. **File and follow:** freeze an investigation as a case file, re-check its conditions as new
    sessions arrive, and close it when each one breaks or survives. Closed cases build the engine's
-   track record: how often each kind of explanation actually held (`/cases`).
+   track record: how often each kind of explanation actually held (`/cases`), and whether its
+   probabilities are calibrated (Brier score, reliability).
+6. **Judge from outside:** `/lab` replays the engine over stored history with no look-ahead and grades
+   it on what happened next: false alarms old vs new, a placebo test of the falsifiers on quiet
+   sessions (target 5%), calibration, and post-move drift. `npm run backtest` (0 credits).
 
 **Mining asset backing** (`/mining` and mining ticker pages): what physically backs coal and
 mineral issuers, from Sectors' mining extension. Reserve life and replacement, license runway,

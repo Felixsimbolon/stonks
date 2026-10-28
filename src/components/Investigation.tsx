@@ -6,6 +6,8 @@ import type { Evidence, HypothesisResult, HypothesisType, Verdict } from "@/lib/
 import type { FetchResult } from "@/app/actions";
 import type { TickerView } from "@/lib/views";
 import { CaseFile } from "./CaseFile";
+import { ColumnChart } from "./charts/ColumnChart";
+import { ChartFrame } from "./charts/kit";
 import { LineChart } from "./charts/LineChart";
 import { FetchButton } from "./FetchButton";
 import { dirColor, pct, shortDate, share, sigma } from "./format";
@@ -214,6 +216,69 @@ function FalsifierPathChart({ path }: { path: Path }) {
   );
 }
 
+// ── Event study ──────────────────────────────────────────────────────────
+
+const WINDOW_LABEL: Record<string, string> = {
+  "run-up": "Run-up (−5 to −1)",
+  event: "Event (−1 to +1)",
+  "move + next session": "Move + next session (0 to +1)",
+  "after the move": "After the move (+1 to +5)",
+};
+
+function EventStudyPanel({ r }: { r: Result }) {
+  const es = r.event;
+  if (es.ars.length === 0) return null;
+  const k = (n: number) => (n === 0 ? "0" : n > 0 ? `+${n}` : `−${-n}`);
+  return (
+    <ChartFrame
+      title="Event study"
+      subtitle="Abnormal (beta-adjusted) return per session around the move, and cumulated over standard windows with significance vs the stock's own volatility"
+      table={{
+        columns: ["window", "sessions", "CAR", "t", "p"],
+        rows: es.windows.map((w) => [
+          WINDOW_LABEL[w.label] ?? w.label,
+          `${w.sessions}${w.complete ? "" : " (so far)"}`,
+          pct(w.car),
+          w.t.toFixed(2),
+          w.p < 0.001 ? "<0.001" : w.p.toFixed(3),
+        ]),
+      }}
+    >
+      <div className="grid gap-10 lg:grid-cols-[1.3fr_1fr]">
+        <ColumnChart
+          height={170}
+          format={(v) => `${(v * 100).toFixed(1)}%`}
+          markers={[{ key: "0", label: "the move" }]}
+          columns={es.ars.map((a) => ({
+            key: k(a.k),
+            label: k(a.k),
+            value: a.ar,
+            tooltipTitle: `${shortDate(a.date)} · session ${k(a.k)}`,
+            tooltip: [{ value: pct(a.ar), label: "abnormal return", color: a.ar >= 0 ? "var(--c-pos)" : "var(--c-neg)" }],
+          }))}
+        />
+        <dl className="space-y-3">
+          {es.windows.map((w) => (
+            <div key={w.label} className="grid grid-cols-[1fr_auto] items-baseline gap-x-4">
+              <dt className="text-sm text-muted">
+                {WINDOW_LABEL[w.label] ?? w.label}
+                {!w.complete && <span className="text-faint"> · {w.sessions} so far</span>}
+              </dt>
+              <dd className="num text-right text-sm text-ink">
+                {pct(w.car)}
+                <span className={`ml-2 text-xs ${w.p < 0.05 ? "text-ink" : "text-faint"}`}>
+                  {w.p < 0.001 ? "p<0.001" : `p=${w.p.toFixed(3)}`}
+                </span>
+              </dd>
+            </div>
+          ))}
+          <p className="pt-1 text-xs text-faint">p under a heavy-tailed t(4) model. Below 0.05 is shown in full ink.</p>
+        </dl>
+      </div>
+    </ChartFrame>
+  );
+}
+
 // ── Hypothesis row ───────────────────────────────────────────────────────
 
 function HypothesisRow({
@@ -275,6 +340,19 @@ function HypothesisRow({
           )}
 
           <p className={`mt-3 text-sm leading-relaxed ${dimmed ? "text-faint" : "text-muted"}`}>{h.rationale}</p>
+          {h.probability !== undefined && (
+            <p className="mt-2 flex items-center gap-2 text-xs text-muted">
+              <span className="relative block h-1.5 w-16 overflow-hidden rounded-full bg-hair">
+                <motion.span
+                  className="absolute inset-y-0 left-0 block rounded-full bg-[var(--c-stock)]"
+                  initial={{ width: 0 }}
+                  animate={{ width: `${h.probability * 100}%` }}
+                  transition={{ delay: 0.8 + rank * 0.08, duration: 0.7, ease }}
+                />
+              </span>
+              <span className="num text-ink">{Math.round(h.probability * 100)}%</span> likely the main driver of the stock-specific part
+            </p>
+          )}
           {trackNote && !dimmed && <p className="num mt-2 text-xs text-sector/80">{trackNote}</p>}
           {h.type === "news" && r.articles.length > 0 && (
             <ul className="mt-3 space-y-2">
@@ -366,7 +444,15 @@ export function Investigation({
         </h2>
         <p className="mt-4 text-sm text-faint">
           {r.subSector ?? "Unknown subsector"} · compared against {r.peerCount} peers · IHSG {pct(move.marketRet)} that day
+          {move.pValue !== undefined && <> · p = {move.pValue < 0.001 ? "<0.001" : move.pValue.toFixed(3)} (heavy-tailed)</>}
         </p>
+        {move.censored && (
+          <p className="mt-3 max-w-2xl border-l-2 border-[var(--c-neg)] pl-4 text-sm text-muted">
+            This session may have been capped by an IDX auto-rejection limit or cut short by a trading halt (no room to
+            trade past the close). The true move may be larger than the close shows; see &ldquo;move + next session&rdquo; in
+            the event study below.
+          </p>
+        )}
 
         {missingNames.length > 0 && (
           <div className="mt-10 max-w-2xl border-l-2 pl-6" style={{ borderImage: "linear-gradient(180deg, var(--sector), transparent) 1" }}>
@@ -394,6 +480,11 @@ export function Investigation({
           <SplitBar r={r} focus={focusPart} setFocus={setFocusPart} />
         </section>
 
+        {/* event study */}
+        <section className="mt-14">
+          <EventStudyPanel r={r} />
+        </section>
+
         {h.unexplained && (
           <motion.p
             className="display mt-14 max-w-3xl border-l-2 pl-6 text-2xl italic leading-snug text-muted"
@@ -411,6 +502,14 @@ export function Investigation({
         <section className="mt-16 grid gap-12 lg:grid-cols-[1fr_20rem]">
           <div>
             <p className="eyebrow mb-1">competing explanations, ranked</p>
+            {r.investigation.otherProbability !== undefined && (
+              <p className="mb-2 text-xs text-faint">
+                Stock-level explanations carry a probability of being the main driver of the stock-specific part.{" "}
+                <span className="text-muted">
+                  Something not tested here: {Math.round(r.investigation.otherProbability * 100)}%.
+                </span>
+              </p>
+            )}
             <ul>
               {hypotheses.map((hyp, i) => (
                 <HypothesisRow key={hyp.type} h={hyp} rank={i} r={r} active={focusH?.type === hyp.type} onFocus={setFocusH} trackNote={trackNotes[hyp.type]} />

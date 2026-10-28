@@ -1,6 +1,7 @@
 import { checkCasesAction } from "@/app/actions";
 import { CaseList } from "@/components/CaseList";
-import { KpiRow, StatTile } from "@/components/charts/kit";
+import { ChartFrame, KpiRow, StatTile } from "@/components/charts/kit";
+import { LineChart } from "@/components/charts/LineChart";
 import { FadeIn } from "@/components/FadeIn";
 import { FetchButton } from "@/components/FetchButton";
 import { TrackRecord } from "@/components/TrackRecord";
@@ -9,7 +10,7 @@ import { getCasesView } from "@/lib/views";
 export const dynamic = "force-dynamic";
 
 export default async function CasesPage() {
-  const { cases, record, headline } = await getCasesView();
+  const { cases, record, headline, calibration } = await getCasesView();
   const open = cases.filter((c) => c.status === "open");
   const closed = cases.filter((c) => c.status === "closed");
 
@@ -62,6 +63,41 @@ export default async function CasesPage() {
       <section>
         <p className="eyebrow mb-6">track record</p>
         <TrackRecord rows={record} headline={headline} />
+        <div className="mt-14">
+          <ChartFrame
+            title="Are the engine's probabilities honest?"
+            subtitle={`Stated probability vs how often the explanation held, across closed cases · ${calibration.points} calls · Brier ${calibration.brier === null ? "—" : calibration.brier.toFixed(3)} (0 is perfect, 0.25 is guessing 50%)`}
+            legend={[
+              { label: "stated probability", color: "var(--c-market)", kind: "line" },
+              { label: "held rate", color: "var(--c-sector)", kind: "line" },
+            ]}
+            table={{
+              columns: ["bin", "calls", "mean stated", "held rate"],
+              rows: calibration.bins.map((b) => [
+                `${Math.round(b.lo * 100)}–${Math.round(b.hi * 100)}%`,
+                b.n,
+                b.meanP === null ? "—" : `${Math.round(b.meanP * 100)}%`,
+                b.heldRate === null ? "—" : `${Math.round(b.heldRate * 100)}%`,
+              ]),
+            }}
+          >
+            {calibration.points > 0 ? (
+              <LineChart
+                height={200}
+                xs={calibration.bins.map((b) => `${Math.round(b.lo * 100)}–${Math.round(b.hi * 100)}%`)}
+                format={(v) => `${Math.round(v * 100)}%`}
+                series={[
+                  { key: "p", label: "stated probability", color: "var(--c-market)", values: calibration.bins.map((b) => b.meanP) },
+                  { key: "held", label: "held rate", color: "var(--c-sector)", values: calibration.bins.map((b) => b.heldRate) },
+                ]}
+              />
+            ) : (
+              <p className="text-sm text-faint">
+                No closed case carries a probability yet. Cases filed from now on do; the backtest on /lab gives a larger sample today.
+              </p>
+            )}
+          </ChartFrame>
+        </div>
       </section>
 
       <section className="mt-20">

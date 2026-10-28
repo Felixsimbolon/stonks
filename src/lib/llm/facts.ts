@@ -66,8 +66,20 @@ export async function buildStockFacts(ticker: string): Promise<StockFacts> {
       `${pct(m.ret)} vs IHSG ${pct(m.marketRet)}; beta ${m.beta.toFixed(2)}; ${m.abnormalZ.toFixed(1)}σ beta-adjusted; volume ${m.volumeRatio.toFixed(1)}× its 20-session average`,
     );
     if (r.subSector) f.add("Subsector", `${r.subSector} (${r.peerCount} peers compared)`, `sectors:/v2/company/report/${t}/`);
+    if (m.censored) f.add(`Session ${m.date}`, "possibly capped by an auto-rejection limit or a trading halt; the true move may be larger");
     for (const h of inv.hypotheses) {
-      f.add(`Explanation “${hypothesisLabel(h.type)}” for ${m.date}`, `${h.verdict.replace("_", " ")} — ${h.rationale}`);
+      const prob =
+        h.probability !== undefined ? ` (probability ${Math.round(h.probability * 100)}% of being the main driver of the stock-specific part)` : "";
+      f.add(`Explanation “${hypothesisLabel(h.type)}” for ${m.date}`, `${h.verdict.replace("_", " ")}${prob} — ${h.rationale}`);
+    }
+    if (inv.otherProbability !== undefined) {
+      f.add(`Something not tested explains ${m.date}`, `probability ${Math.round(inv.otherProbability * 100)}%`);
+    }
+    for (const w of r.event.windows) {
+      f.add(
+        `Event study ${m.date}, ${w.label} (sessions ${w.from} to ${w.to})`,
+        `CAR ${pct(w.car)}, p ${w.p < 0.001 ? "<0.001" : w.p.toFixed(3)}${w.complete ? "" : `, ${w.sessions} sessions so far`}`,
+      );
     }
     for (const fa of r.falsifiers) {
       const e = fa.evaluation;
