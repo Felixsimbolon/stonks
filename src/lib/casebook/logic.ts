@@ -40,6 +40,9 @@ const LABEL: Record<HypothesisType, string> = {
   noise: "Just noise",
   foreign_flow: "Foreign investors drove it",
   news: "News around the move",
+  broker_concentration: "A few brokers drove it",
+  exchange_action: "The exchange acted (suspension)",
+  group_contagion: "Its conglomerate group moved",
 };
 export const hypothesisLabel = (t: HypothesisType) => LABEL[t];
 

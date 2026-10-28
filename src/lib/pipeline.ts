@@ -9,6 +9,7 @@ import {
   type Falsifier,
   type FalsifierEvaluation,
   type FalsifierPath,
+  type GroupData,
   type Investigation,
   type Move,
   type NewsItem,
@@ -29,6 +30,7 @@ import {
   sourceOf,
   todayWib,
 } from "@/lib/sectors";
+import { getAffiliates, getBrokerDays, getGroupMembers, getSuspensions, surveillanceSource } from "@/lib/sectors/surveillance";
 
 // Glue between Sectors data and the pure engine. Calls are sequential on
 // purpose: the credit check is per call, and SQLite prefers one writer.
@@ -68,7 +70,51 @@ export interface InvestigationResult {
   /** Articles tagged with the ticker on the move day or the day before. */
   articles: NewsItem[];
   /** Evidence that was never fetched; the hypotheses that need it show as untested. */
-  missing: { peers: boolean; events: boolean; flows: boolean; news: boolean };
+  missing: { peers: boolean; events: boolean; flows: boolean; news: boolean; brokers: boolean; suspensions: boolean; groups: boolean };
+}
+
+const MAX_GROUPS = 2;
+const MAX_GROUP_MEMBERS = 6;
+
+/**
+ * Conglomerate groups of a stock with other listed members (outside its
+ * subsector peers), each with short bar history around the move.
+ * Returns undefined when group data was never fetched.
+ */
+async function loadGroups(
+  ticker: string,
+  move: Move,
+  peerSet: Set<string>,
+  mode: FetchMode,
+): Promise<GroupData[] | undefined> {
+  const affiliates = await orMissing(getAffiliates(ticker, mode));
+  if (!affiliates) return undefined;
+  const to = todayWib();
+  const seen = new Set([ticker, ...peerSet]);
+  const groups: GroupData[] = [];
+  let budget = MAX_GROUP_MEMBERS;
+  for (const name of affiliates.slice(0, MAX_GROUPS)) {
+    const symbols = await orMissing(getGroupMembers(name, mode));
+    if (!symbols) return undefined;
+    const members: Record<string, Bar[]> = {};
+    for (const m of symbols) {
+      if (budget <= 0) break;
+      if (seen.has(m)) continue;
+      seen.add(m);
+      try {
+        const b = await getDailyBars(m, addDays(move.date, -10), to, mode);
+        if (b.length > 0) {
+          members[m] = b;
+          budget--;
+        }
+      } catch (e) {
+        if (e instanceof SectorsError && e.status === 404) continue;
+        throw e;
+      }
+    }
+    groups.push({ name, members });
+  }
+  return groups;
 }
 
 export async function investigateMove(
@@ -106,6 +152,12 @@ export async function investigateMove(
   const newsTo = addDays(move.date, 1) < to ? addDays(move.date, 1) : to;
   const news = await orMissing(getNews(ticker, addDays(move.date, -2), newsTo, stockMode));
 
+  // Surveillance desk: broker concentration, IDX suspensions, conglomerate group.
+  const brokers = await orMissing(getBrokerDays(ticker, addDays(move.date, -13), move.date, stockMode));
+  const suspTo = addDays(move.date, 3) < to ? addDays(move.date, 3) : to;
+  const suspensions = await orMissing(getSuspensions(ticker, addDays(move.date, -10), suspTo, stockMode));
+  const groups = await loadGroups(ticker, move, new Set(Object.keys(peers)), stockMode);
+
   const investigation = investigate({
     ticker,
     move,
@@ -116,6 +168,9 @@ export async function investigateMove(
     eventTypesCovered: covers,
     flows: flows ?? undefined,
     news: news ?? undefined,
+    brokers: brokers ?? undefined,
+    suspensions: suspensions ?? undefined,
+    groups,
     sources: {
       stock: sourceOf.daily(ticker),
       market: sourceOf.index(MARKET_INDEX),
@@ -123,10 +178,13 @@ export async function investigateMove(
       events: sourceOf.corporateActions(ticker),
       flows: sourceOf.flows(ticker),
       news: sourceOf.news(ticker),
+      brokers: surveillanceSource.brokers(ticker),
+      suspensions: surveillanceSource.suspensions(ticker),
+      groups: surveillanceSource.groups(ticker),
     },
   });
 
-  const post = { move, bars, marketBars: market, peers, flows: flows ?? undefined };
+  const post = { move, bars, marketBars: market, peers, flows: flows ?? undefined, groups };
   const falsifiers = falsifiersFor(investigation).map((f) => ({
     ...f,
     evaluation: evaluateFalsifier(f.rule, post),
@@ -147,6 +205,9 @@ export async function investigateMove(
       events: !eventInfo,
       flows: needStockEvidence && flows === null,
       news: needStockEvidence && news === null,
+      brokers: needStockEvidence && brokers === null,
+      suspensions: needStockEvidence && suspensions === null,
+      groups: needStockEvidence && groups === undefined,
     },
   };
 }
@@ -169,7 +230,8 @@ export async function loadPostMoveData(ticker: string, move: Move): Promise<Post
     if (peerBars.length > 0) peers[p] = peerBars;
   }
   const flows = await getForeignFlows(t, from, to);
-  return { move, bars, marketBars, peers, flows: flows ?? undefined, asOf: bars.at(-1)?.date ?? null };
+  const groups = await loadGroups(t, move, new Set(Object.keys(peers)), {});
+  return { move, bars, marketBars, peers, flows: flows ?? undefined, groups, asOf: bars.at(-1)?.date ?? null };
 }
 
 /** Resolve to null when the data was never fetched (read-only mode). */

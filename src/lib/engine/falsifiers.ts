@@ -1,5 +1,5 @@
 import { dailyReturns, median } from "./stats";
-import type { Bar, FlowPoint, HypothesisResult, HypothesisType, Investigation, Move } from "./types";
+import type { Bar, FlowPoint, GroupData, HypothesisResult, HypothesisType, Investigation, Move } from "./types";
 
 // A tiny, deterministic rule language for "what would prove this story wrong".
 // Rules are stored as JSON and re-evaluated every day after the market closes.
@@ -9,7 +9,8 @@ export type FalsifierMetric =
   | "spread_vs_peer_median" // stock cum return minus median peer cum return after the move day
   | "retracement" // share of the move given back (1 = fully reversed, negative = extended)
   | "avg_volume_ratio" // avg volume after the move / pre-move baseline volume
-  | "foreign_flow_ratio"; // net foreign flow after the move / net foreign flow on the move day
+  | "foreign_flow_ratio" // net foreign flow after the move / net foreign flow on the move day
+  | "spread_vs_group_median"; // stock cum return minus median conglomerate-group member cum return
 
 export type FalsifierRule =
   | { metric: FalsifierMetric; window: number; op: ">" | "<" | "abs>"; value: number }
@@ -27,6 +28,7 @@ export interface PostMoveData {
   marketBars: Bar[];
   peers: Record<string, Bar[]>;
   flows?: FlowPoint[];
+  groups?: GroupData[];
 }
 
 export type FalsifierStatus = "pending" | "triggered" | "survived";
@@ -64,6 +66,16 @@ function metricValue(metric: FalsifierMetric, data: PostMoveData, n: number): nu
         .filter((x): x is number => x !== null);
       if (stock === null || peerCums.length === 0) return null;
       return stock - median(peerCums);
+    }
+    case "spread_vs_group_median": {
+      const stock = cumAfter(bars, move.date, n);
+      const memberCums = (data.groups ?? []).flatMap((g) =>
+        Object.values(g.members)
+          .map((m) => cumAfter(m, move.date, n))
+          .filter((x): x is number => x !== null),
+      );
+      if (stock === null || memberCums.length === 0) return null;
+      return stock - median(memberCums);
     }
     case "retracement": {
       const stock = cumAfter(bars, move.date, n);
@@ -190,6 +202,33 @@ export function defaultFalsifiers({ move, decomposition }: Investigation, hypoth
           ? { metric: "cum_abnormal_return", window: 5, op: ">", value: drift(5) }
           : { metric: "cum_abnormal_return", window: 5, op: "<", value: -drift(5) },
       }];
+    case "broker_concentration":
+      return [{
+        hypothesisType: "broker_concentration",
+        description: "Activity returns to normal but the price keeps moving the same way, so it wasn't just a few brokers pushing it.",
+        rule: {
+          all: [
+            { metric: "avg_volume_ratio", window: 3, op: "<", value: 1.2 },
+            dir > 0
+              ? { metric: "cum_abnormal_return", window: 3, op: ">", value: drift(3) }
+              : { metric: "cum_abnormal_return", window: 3, op: "<", value: -drift(3) },
+          ],
+        },
+      }];
+    case "exchange_action":
+      return [{
+        hypothesisType: "exchange_action",
+        description: "The market gives back more than half the move within 5 trading days, so the post-suspension repricing didn't hold.",
+        rule: { metric: "retracement", window: 5, op: ">", value: 0.5 },
+      }];
+    case "group_contagion": {
+      const gap = Math.max(0.03, stockDrift(5));
+      return [{
+        hypothesisType: "group_contagion",
+        description: `The stock decouples from its group: return gap vs the group median beyond ±${pct(gap)} within 5 trading days.`,
+        rule: { metric: "spread_vs_group_median", window: 5, op: "abs>", value: gap },
+      }];
+    }
     case "liquidity":
       return [{
         hypothesisType: "liquidity",

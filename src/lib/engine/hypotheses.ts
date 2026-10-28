@@ -1,6 +1,7 @@
 import { decompose, volumeSignal } from "./decompose";
-import { clamp01, dayDiff, median, robustStd } from "./stats";
+import { clamp01, dailyReturns, dayDiff, median, robustStd } from "./stats";
 import type {
+  BrokerDay,
   CompanyEvent,
   Decomposition,
   Evidence,
@@ -244,7 +245,167 @@ const news: Test = (ctx) => {
   );
 };
 
-const TESTS: Test[] = [marketBeta, sectorRotation, earnings, dividend, liquidity, foreignFlow, news, noise];
+// ── Surveillance-desk explanations (exchange surveillance, regulator, network) ──
+
+/** Share of one side's value (buy or sell) taken by its top 3 brokers on a day. */
+export function topShare(rows: BrokerDay["rows"], side: "buy" | "sell", n = 3): number | null {
+  const vals = rows.map((r) => (side === "buy" ? r.buyValue : r.sellValue)).filter((v) => v > 0).sort((a, b) => b - a);
+  const total = vals.reduce((a, v) => a + v, 0);
+  return total > 0 ? vals.slice(0, n).reduce((a, v) => a + v, 0) / total : null;
+}
+
+/**
+ * A few brokers drove it (the exchange surveillance view): on the move day,
+ * the side that pushed the price (buyers on an up move, sellers on a down
+ * move) was far more concentrated in its top 3 brokers than on recent sessions,
+ * and the biggest broker's net position points the same way.
+ */
+const brokerConcentration: Test = (ctx) => {
+  const { input, d, board, ids } = ctx;
+  if (!input.brokers) return untested("broker_concentration", "Broker activity not fetched.");
+  const skip = notNeeded("broker_concentration", ctx);
+  if (skip) return skip;
+
+  const { move, brokers, sources } = input;
+  const src = sources.brokers ?? "unknown";
+  const day = brokers.find((b) => b.date === move.date);
+  if (!day || day.rows.length === 0) return untested("broker_concentration", "Sectors has no broker rows for the move date.");
+  const dir = Math.sign(d.stockSpecific) || 1;
+  const side = dir > 0 ? "buy" : "sell";
+  const today = topShare(day.rows, side);
+  const prior = brokers
+    .filter((b) => b.date < move.date)
+    .map((b) => topShare(b.rows, side))
+    .filter((x): x is number => x !== null);
+  if (today === null || prior.length < 4) return untested("broker_concentration", "Not enough broker history before the move.");
+
+  const base = median(prior);
+  const sd = robustStd(prior) || 0.05;
+  const z = (today - base) / sd;
+  const top = [...day.rows].sort((a, b) => dir * (b.netValue - a.netValue)).slice(0, 3);
+  const lead = top[0];
+  const leadAligned = Math.sign(lead.netValue) === dir;
+  const ev = [
+    board.add({ kind: "broker_top3_share", label: `Top-3 brokers' share of ${side} value on the move day`, value: today, source: src }),
+    board.add({ kind: "broker_top3_base", label: `Usual top-3 ${side} share (prior sessions)`, value: base, source: src }),
+    board.add({ kind: "broker_conc_z", label: "Concentration vs its usual range", value: z, source: "engine" }),
+    board.add({
+      kind: "broker_top",
+      label: `Biggest net ${dir > 0 ? "buyers" : "sellers"}`,
+      value: top.map((r) => `${r.broker} ${idr(r.netValue)}`).join(", "),
+      source: src,
+    }),
+    ids.stockSpecific,
+  ];
+  const strength = leadAligned ? clamp01((z - 1) / 2) : 0;
+  const rationale =
+    z < 1
+      ? `${side === "buy" ? "Buying" : "Selling"} was spread as usual: the top 3 brokers took ${share(today)} of ${side} value vs ${share(base)} normally.`
+      : !leadAligned
+        ? `${side === "buy" ? "Buying" : "Selling"} was concentrated (${share(today)} in the top 3), but the biggest broker's net position went against the move.`
+        : `${side === "buy" ? "Buying" : "Selling"} was unusually concentrated: the top 3 brokers took ${share(today)} of ${side} value vs ${share(base)} normally (${z.toFixed(1)}σ), led by ${lead.broker} at ${idr(lead.netValue)} net.`;
+  return result("broker_concentration", d.shares.stockSpecific * strength, rationale, ev);
+};
+
+/**
+ * The exchange acted (the regulator's view): a suspension shortly before the
+ * move (trading resumed and the price caught up), or one right after it (the
+ * exchange flagged the move as unusual; that corroborates, but doesn't cause).
+ */
+const exchangeAction: Test = (ctx) => {
+  const { input, d, board, ids } = ctx;
+  if (!input.suspensions) return untested("exchange_action", "IDX suspension notices not fetched.");
+  const skip = notNeeded("exchange_action", ctx);
+  if (skip) return skip;
+
+  const { move, suspensions, sources } = input;
+  const src = sources.suspensions ?? "unknown";
+  const before = suspensions.find((s) => dayDiff(s.date, move.date) >= 1 && dayDiff(s.date, move.date) <= 10);
+  const after = suspensions.find((s) => dayDiff(move.date, s.date) >= 0 && dayDiff(move.date, s.date) <= 3);
+  if (!before && !after) {
+    const id = board.add({ kind: "suspension", label: "IDX suspension within 10 days before or 3 after", value: "none", source: src });
+    return result("exchange_action", 0, "No IDX suspension in the 10 days before or 3 days after the move.", [id]);
+  }
+  const s = (before ?? after)!;
+  const id = board.add({ kind: "suspension", label: `IDX suspension (${s.date})`, value: s.reason, source: s.url ?? src });
+  if (before) {
+    return result(
+      "exchange_action",
+      d.shares.stockSpecific * 0.8,
+      `IDX suspended trading on ${s.date} (“${s.reason}”); the move came as trading resumed and the price caught up.`,
+      [id, ids.stockSpecific],
+    );
+  }
+  return result(
+    "exchange_action",
+    d.shares.stockSpecific * 0.35,
+    `IDX suspended the stock on ${s.date} (“${s.reason}”), right after the move: the exchange itself flagged it as unusual. That corroborates a stock-specific move but doesn't say what caused it.`,
+    [id, ids.stockSpecific],
+  );
+};
+
+/**
+ * Its conglomerate group moved together (the network view): other listed
+ * companies of the same group, outside its subsector, moved the same way that
+ * day beyond the market. Common in IDX, where group news and group-level flows
+ * move affiliates together.
+ */
+const groupContagion: Test = (ctx) => {
+  const { input, d, board, ids } = ctx;
+  if (!input.groups) return untested("group_contagion", "Conglomerate group data not fetched.");
+  const skip = notNeeded("group_contagion", ctx);
+  if (skip) return skip;
+
+  const { move, groups, sources } = input;
+  const src = sources.groups ?? "unknown";
+  if (groups.length === 0) {
+    const id = board.add({ kind: "group", label: "Conglomerate group", value: "none on record", source: src });
+    return result("group_contagion", 0, "No listed conglomerate group on record for this stock.", [id]);
+  }
+
+  const dir = Math.sign(d.stockSpecific) || 1;
+  const measured = groups.flatMap((g) => {
+    const excess = Object.values(g.members).flatMap((bars) => {
+      const r = dailyReturns(bars).find((x) => x.date === move.date);
+      return r ? [r.value - move.marketRet] : [];
+    });
+    if (excess.length < 2) return [];
+    const med = median(excess);
+    const breadth = excess.filter((x) => Math.sign(x) === dir).length / excess.length;
+    const portion = Math.sign(med) === dir && d.stockSpecific !== 0 ? clamp01(med / d.stockSpecific) : 0;
+    const score = d.shares.stockSpecific * portion * (0.5 + 0.5 * clamp01((breadth - 0.5) / 0.4));
+    return [{ g, med, breadth, n: excess.length, score }];
+  });
+  if (measured.length === 0) return untested("group_contagion", `Fewer than 2 group members (${groups.map((g) => g.name).join(", ")}) have data on ${move.date}.`);
+
+  const best = measured.reduce((a, b) => (b.score > a.score ? b : a));
+  const ev = [
+    board.add({ kind: "group", label: "Conglomerate group", value: best.g.name, source: src }),
+    board.add({ kind: "group_median_excess", label: `${best.g.name} members' median return vs IHSG`, value: best.med, source: src }),
+    board.add({ kind: "group_breadth", label: `${best.g.name} members moving the same way`, value: best.breadth, source: src }),
+    ids.stockSpecific,
+  ];
+  return result(
+    "group_contagion",
+    best.score,
+    `Other ${best.g.name} companies outside its subsector moved ${pct(best.med)} vs IHSG that day; ${share(best.breadth)} of ${best.n} moved the same way.`,
+    ev,
+  );
+};
+
+const TESTS: Test[] = [
+  marketBeta,
+  sectorRotation,
+  earnings,
+  dividend,
+  liquidity,
+  foreignFlow,
+  news,
+  brokerConcentration,
+  exchangeAction,
+  groupContagion,
+  noise,
+];
 
 const RANK: Record<Verdict, number> = { supported: 0, partial: 0, weak: 0, refuted: 0, not_needed: 1, untested: 2 };
 

@@ -23,6 +23,9 @@ const NAMES: Record<HypothesisType, string> = {
   noise: "Just noise",
   foreign_flow: "Foreign investors drove it",
   news: "News around the move",
+  broker_concentration: "A few brokers drove it",
+  exchange_action: "The exchange acted (suspension)",
+  group_contagion: "Its conglomerate group moved",
 };
 
 const VERDICT_STYLE: Record<Verdict, { label: string; color: string }> = {
@@ -49,7 +52,12 @@ function formatEvidence(e: Evidence): string {
     case "beta":
       return e.value.toFixed(2);
     case "peer_breadth":
+    case "broker_top3_share":
+    case "broker_top3_base":
+    case "group_breadth":
       return share(e.value);
+    case "broker_conc_z":
+      return sigma(e.value);
     case "stock_specific_z":
       return sigma(e.value);
     case "volume_ratio":
@@ -326,6 +334,9 @@ export function Investigation({
     r.missing.events && "dividend data",
     r.missing.flows && "foreign flow",
     r.missing.news && "news",
+    r.missing.brokers && "broker activity",
+    r.missing.suspensions && "IDX suspensions",
+    r.missing.groups && "conglomerate group",
   ].filter((x): x is string => Boolean(x));
 
   return (
@@ -370,7 +381,7 @@ export function Investigation({
               hint={
                 r.missing.peers
                   ? "first time for a ticker ≈ 20–30 credits (peer history); stored after that"
-                  : "≈ 1–3 credits; foreign flow and news only when part of the move is stock-specific"
+                  : "≈ 4–12 credits; foreign flow, news, brokers, suspensions and group only when part of the move is stock-specific"
               }
               className="mt-3"
             />
@@ -392,7 +403,7 @@ export function Investigation({
             transition={{ delay: 0.6 }}
           >
             Something specific to {ticker} happened that none of the explanations we could test captures. That is the
-            part worth digging into: company filings or broker summaries.
+            part worth digging into: company filings and IDX announcements.
           </motion.p>
         )}
 

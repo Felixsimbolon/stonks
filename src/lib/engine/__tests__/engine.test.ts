@@ -169,6 +169,59 @@ describe("hypotheses", () => {
     expect(verdictOf(inv, "news")).toBe("supported");
   });
 
+  // ── surveillance-desk explanations ──
+  function brokerDays(concentratedSellOnMove: boolean) {
+    const days = sc.dates.slice(141, 151).map((date, k) => {
+      const onMove = date === moveDate;
+      const rows = Array.from({ length: 10 }, (_, i) => {
+        const big = onMove && concentratedSellOnMove && i < 3;
+        const sell = big ? 50e9 : 5e9 + ((i + k) % 4) * 0.4e9;
+        const buy = 5e9 + ((i * 3 + k) % 5) * 0.3e9;
+        return { broker: `B${i}`, buyValue: buy, sellValue: sell, netValue: buy - sell };
+      });
+      return { date, rows };
+    });
+    return days;
+  }
+
+  it("credits concentrated selling by a few brokers on a stock-specific drop", () => {
+    const inv = investigate(input(-0.06, 0, { brokers: brokerDays(true) }));
+    expect(verdictOf(inv, "broker_concentration")).toBe("supported");
+    expect(inv.evidence.find((e) => e.kind === "broker_top")!.value).toContain("B0");
+  });
+
+  it("refutes broker concentration when activity is spread as usual", () => {
+    const inv = investigate(input(-0.06, 0, { brokers: brokerDays(false) }));
+    expect(verdictOf(inv, "broker_concentration")).toBe("refuted");
+  });
+
+  it("reads a suspension just before the move as a cause and one just after as corroboration", () => {
+    const before = investigate(input(-0.06, 0, { suspensions: [{ date: sc.dates[146], reason: "Cumulative price drop", url: null }] }));
+    const after = investigate(input(-0.06, 0, { suspensions: [{ date: sc.dates[151], reason: "Cumulative price drop", url: null }] }));
+    const none = investigate(input(-0.06, 0, { suspensions: [] }));
+    const score = (inv: ReturnType<typeof investigate>) => inv.hypotheses.find((h) => h.type === "exchange_action")!.score;
+    expect(score(before)).toBeGreaterThan(score(after));
+    expect(score(after)).toBeGreaterThan(0);
+    expect(verdictOf(none, "exchange_action")).toBe("refuted");
+  });
+
+  it("credits the conglomerate group when its other members fell too", () => {
+    const members = Object.fromEntries([11, 12, 13].map((seed) => [`G${seed}`, sc.stock({ seed, shocks: { [moveDate]: -0.06 } })]));
+    const inv = investigate(input(-0.06, 0, { groups: [{ name: "Test Group", members }] }));
+    expect(verdictOf(inv, "group_contagion")).toBe("supported");
+  });
+
+  it("refutes the group when members didn't move, and when there is no group", () => {
+    const members = Object.fromEntries([11, 12, 13].map((seed) => [`G${seed}`, sc.stock({ seed })]));
+    expect(verdictOf(investigate(input(-0.06, 0, { groups: [{ name: "Test Group", members }] })), "group_contagion")).toBe("refuted");
+    expect(verdictOf(investigate(input(-0.06, 0, { groups: [] })), "group_contagion")).toBe("refuted");
+  });
+
+  it("marks the new explanations untested when their data wasn't fetched", () => {
+    const inv = investigate(input(-0.06, 0));
+    for (const t of ["broker_concentration", "exchange_action", "group_contagion"]) expect(verdictOf(inv, t)).toBe("untested");
+  });
+
   it("cites evidence that exists on the board", () => {
     const inv = investigate(input(-0.06, -0.06));
     const ids = new Set(inv.evidence.map((e) => e.id));

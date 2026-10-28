@@ -37,7 +37,10 @@ export type HypothesisType =
   | "liquidity"
   | "noise"
   | "foreign_flow"
-  | "news";
+  | "news"
+  | "broker_concentration"
+  | "exchange_action"
+  | "group_contagion";
 
 // "not_needed": market + sector already explain the move, so there is no
 // stock-specific part left for this explanation to account for.
@@ -85,6 +88,32 @@ export interface NewsItem {
   tags: string[];
 }
 
+/** One broker's activity in one stock on one session (IDR values). */
+export interface BrokerRow {
+  broker: string; // IDX broker code, e.g. "YP"
+  buyValue: number;
+  sellValue: number;
+  netValue: number; // buy − sell
+}
+
+export interface BrokerDay {
+  date: string;
+  rows: BrokerRow[];
+}
+
+/** An IDX trading suspension notice. */
+export interface Suspension {
+  date: string;
+  reason: string;
+  url: string | null;
+}
+
+/** A conglomerate group the stock belongs to, with other listed members' bars. */
+export interface GroupData {
+  name: string; // e.g. "Djarum"
+  members: Record<string, Bar[]>; // excludes the stock itself and its subsector peers
+}
+
 export interface CompanyEvent {
   type: "earnings_report" | "ex_dividend" | "corporate_action";
   date: string;
@@ -109,6 +138,9 @@ export interface InvestigationInput {
   // undefined = not fetched, so the hypothesis is "untested".
   flows?: FlowPoint[]; // daily foreign flow up to and after the move
   news?: NewsItem[]; // articles tagged with the ticker around the move
+  brokers?: BrokerDay[]; // per-broker activity for the sessions up to and including the move
+  suspensions?: Suspension[]; // IDX suspension notices around the move
+  groups?: GroupData[]; // conglomerate groups the stock belongs to ([] = none)
   sources: {
     stock: string;
     market: string;
@@ -116,6 +148,9 @@ export interface InvestigationInput {
     events?: string;
     flows?: string;
     news?: string;
+    brokers?: string;
+    suspensions?: string;
+    groups?: string;
   };
 }
 
