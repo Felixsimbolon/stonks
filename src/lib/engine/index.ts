@@ -4,3 +4,4 @@ export * from "./detector";
 export * from "./decompose";
 export * from "./hypotheses";
 export * from "./falsifiers";
+export * from "./eventstudy";

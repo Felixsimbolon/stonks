@@ -3,6 +3,7 @@ import {
   bootstrapDrift,
   detectMoves,
   evaluateFalsifier,
+  eventStudy,
   falsifierPath,
   falsifiersFor,
   heavyTailP,
@@ -320,6 +321,31 @@ describe("falsifiers", () => {
     expect(path.thresholds).toEqual([0.5]);
     const abs = falsifierPath({ metric: "cum_abnormal_return", window: 5, op: "abs>", value: 0.04 }, { move, bars, marketBars: sc.market, peers })!;
     expect(abs.thresholds).toEqual([0.04, -0.04]);
+  });
+
+  it("uses bootstrap bands for falsifier thresholds when the move has them", () => {
+    const bars = sc.stock({ seed: 1, shocks: { [moveDate]: -0.05 } });
+    const move = measureMove("TEST", bars, sc.market, moveDate)!;
+    const inv = investigate({ ticker: "TEST", move, bars, marketBars: sc.market, peers, events: [], sources });
+    const f = falsifiersFor(inv).find((x) => x.hypothesisType === "market_beta");
+    if (f && !("all" in f.rule)) expect(f.rule.value).toBeCloseTo(move.drift![5].abs, 10);
+  });
+
+  it("measures abnormal returns and CARs around the move", () => {
+    const after = Object.fromEntries(sc.dates.slice(151, 156).map((d) => [d, -0.01]));
+    const bars = sc.stock({ seed: 1, shocks: { [moveDate]: -0.06, ...after } });
+    const move = measureMove("TEST", bars, sc.market, moveDate)!;
+    const es = eventStudy(move, bars, sc.market);
+    expect(es.ars.map((a) => a.k)).toEqual([-5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5]);
+    const ev = es.windows.find((w) => w.label === "event")!;
+    expect(ev.complete).toBe(true);
+    expect(ev.car).toBeLessThan(-0.04);
+    expect(ev.p).toBeLessThan(0.05);
+    const drift = es.windows.find((w) => w.label === "after the move")!;
+    expect(drift.car).toBeLessThan(0);
+    // a window past the available data is marked incomplete
+    const cut = eventStudy(move, bars.slice(0, 153), sc.market);
+    expect(cut.windows.find((w) => w.label === "after the move")!.complete).toBe(false);
   });
 
   it("survives when nothing happens for the full window", () => {

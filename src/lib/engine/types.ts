@@ -70,6 +70,8 @@ export interface Decomposition {
   peerCount: number;
   breadth: number | null; // share of peers whose beta-adjusted return had the move's sign
   stockSpecificStd: number; // robust std of the daily stock-specific part, pre-move
+  /** Bootstrap 5%/95% band of 5-session sums of the stock-specific part (for decoupling thresholds). */
+  stockSpecificDrift?: DriftBand;
   stockSpecificZ: number;
   relativeVolume: number | null; // stock volume ratio / median peer volume ratio
 }

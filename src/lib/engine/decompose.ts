@@ -1,4 +1,4 @@
-import { clamp01, dailyReturns, median, ols, robustStd, volumeRatioAt } from "./stats";
+import { bootstrapDrift, clamp01, dailyReturns, median, ols, robustStd, volumeRatioAt } from "./stats";
 import type { Bar, Decomposition, Move } from "./types";
 
 export const MIN_PEERS = 3;
@@ -91,6 +91,7 @@ export function decompose(move: Move, bars: Bar[], marketBars: Bar[], peers: Rec
     peerCount: peerAbnormal.length,
     breadth,
     stockSpecificStd,
+    stockSpecificDrift: history.length >= 20 ? (bootstrapDrift(history, 5) ?? undefined) : undefined,
     stockSpecificZ: stockSpecificStd > 0 ? stockSpecific / stockSpecificStd : 0,
     relativeVolume,
   };

@@ -151,20 +151,24 @@ export function evaluateFalsifier(rule: FalsifierRule, data: PostMoveData): Fals
 
 /**
  * Default falsifiers per hypothesis type, parameterized by the move itself.
- * Thresholds are 2σ over the window, using robust σ so a volatile stretch
- * before the move does not make them unreachable.
+ * Thresholds are what chance alone reaches 95% of the time over the window:
+ * a bootstrap of the stock's own pre-move abnormal returns (fat tails and
+ * all), falling back to 2 robust σ × √n when there isn't enough history.
  */
 export function defaultFalsifiers({ move, decomposition }: Investigation, hypothesis: HypothesisResult): Falsifier[] {
   const dir = Math.sign(move.ret) || 1;
-  const drift = (days: number) => 2 * move.residualStd * Math.sqrt(days);
-  const stockDrift = (days: number) => 2 * decomposition.stockSpecificStd * Math.sqrt(days);
+  const band = (n: 3 | 5) => move.drift?.[n];
+  const drift = (n: 3 | 5) => band(n)?.abs ?? 2 * move.residualStd * Math.sqrt(n);
+  const driftUp = (n: 3 | 5) => band(n)?.hi ?? drift(n);
+  const driftDown = (n: 3 | 5) => band(n)?.lo ?? -drift(n);
+  const stockDrift = (n: 5) => decomposition.stockSpecificDrift?.abs ?? 2 * decomposition.stockSpecificStd * Math.sqrt(n);
   const pct = (x: number) => `${(x * 100).toFixed(1)}%`;
 
   switch (hypothesis.type) {
     case "market_beta":
       return [{
         hypothesisType: "market_beta",
-        description: `The stock keeps moving on its own: beta-adjusted return beyond ±${pct(drift(5))} within 5 trading days.`,
+        description: `The stock keeps moving on its own: beta-adjusted return beyond ±${pct(drift(5))} within 5 trading days, more than chance alone reaches 95% of the time.`,
         rule: { metric: "cum_abnormal_return", window: 5, op: "abs>", value: drift(5) },
       }];
     case "sector_rotation": {
@@ -197,10 +201,10 @@ export function defaultFalsifiers({ move, decomposition }: Investigation, hypoth
     case "noise":
       return [{
         hypothesisType: hypothesis.type,
-        description: `The move keeps going: beta-adjusted return extends another ${pct(drift(5))} in the same direction within 5 trading days.`,
+        description: `The move keeps going: beta-adjusted return extends another ${pct(Math.abs(dir > 0 ? driftUp(5) : driftDown(5)))} in the same direction within 5 trading days, more than chance alone reaches 95% of the time.`,
         rule: dir > 0
-          ? { metric: "cum_abnormal_return", window: 5, op: ">", value: drift(5) }
-          : { metric: "cum_abnormal_return", window: 5, op: "<", value: -drift(5) },
+          ? { metric: "cum_abnormal_return", window: 5, op: ">", value: driftUp(5) }
+          : { metric: "cum_abnormal_return", window: 5, op: "<", value: driftDown(5) },
       }];
     case "broker_concentration":
       return [{
@@ -210,8 +214,8 @@ export function defaultFalsifiers({ move, decomposition }: Investigation, hypoth
           all: [
             { metric: "avg_volume_ratio", window: 3, op: "<", value: 1.2 },
             dir > 0
-              ? { metric: "cum_abnormal_return", window: 3, op: ">", value: drift(3) }
-              : { metric: "cum_abnormal_return", window: 3, op: "<", value: -drift(3) },
+              ? { metric: "cum_abnormal_return", window: 3, op: ">", value: driftUp(3) }
+              : { metric: "cum_abnormal_return", window: 3, op: "<", value: driftDown(3) },
           ],
         },
       }];
@@ -237,8 +241,8 @@ export function defaultFalsifiers({ move, decomposition }: Investigation, hypoth
           all: [
             { metric: "avg_volume_ratio", window: 3, op: "<", value: 1.2 },
             dir > 0
-              ? { metric: "cum_abnormal_return", window: 3, op: ">", value: drift(3) }
-              : { metric: "cum_abnormal_return", window: 3, op: "<", value: -drift(3) },
+              ? { metric: "cum_abnormal_return", window: 3, op: ">", value: driftUp(3) }
+              : { metric: "cum_abnormal_return", window: 3, op: "<", value: driftDown(3) },
           ],
         },
       }];

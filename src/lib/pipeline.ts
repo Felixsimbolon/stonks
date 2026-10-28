@@ -2,12 +2,14 @@ import {
   decompose,
   detectMoves,
   evaluateFalsifier,
+  eventStudy,
   falsifierPath,
   falsifiersFor,
   investigate,
   type Bar,
   type Falsifier,
   type FalsifierEvaluation,
+  type EventStudy,
   type FalsifierPath,
   type GroupData,
   type Investigation,
@@ -69,6 +71,8 @@ export interface InvestigationResult {
   falsifiers: (Falsifier & { evaluation: FalsifierEvaluation; path: FalsifierPath | null })[];
   /** Articles tagged with the ticker on the move day or the day before. */
   articles: NewsItem[];
+  /** Abnormal returns around the move and CARs over standard windows. */
+  event: EventStudy;
   /** Evidence that was never fetched; the hypotheses that need it show as untested. */
   missing: { peers: boolean; events: boolean; flows: boolean; news: boolean; brokers: boolean; suspensions: boolean; groups: boolean };
 }
@@ -196,6 +200,7 @@ export async function investigateMove(
     subSector: peerInfo?.subSector ?? null,
     peerCount: Object.keys(peers).length,
     falsifiers,
+    event: eventStudy(move, bars, market),
     articles: (news ?? []).filter((n) => {
       const day = n.timestamp.slice(0, 10);
       return day >= addDays(move.date, -1) && day <= move.date;
