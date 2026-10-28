@@ -87,6 +87,72 @@ export function ols(x: number[], y: number[]): { alpha: number; beta: number; re
   return { alpha, beta, residuals };
 }
 
+// ── Heavy-tailed significance ────────────────────────────────────────────
+// Daily stock returns have fat tails, so a normal model overstates how rare a
+// big day is. We score robust z-scores against a Student t with 4 degrees of
+// freedom, rescaled to unit variance (t4 has variance 2).
+
+/** CDF of Student's t with ν = 4 (closed form). */
+export function studentT4Cdf(t: number): number {
+  const k = 1 + (t * t) / 4;
+  return 0.5 + (3 / 8) * (t / Math.sqrt(k)) * (1 - (t * t) / (12 * k));
+}
+
+/** Two-sided tail probability of a unit-variance z under the t(4) model. */
+export function heavyTailP(z: number): number {
+  return Math.min(1, 2 * (1 - studentT4Cdf(Math.abs(z) * Math.SQRT2)));
+}
+
+/** One-sided (upper) tail probability of a unit-variance z under the t(4) model. */
+export function heavyTailUpperP(z: number): number {
+  return Math.min(1, 1 - studentT4Cdf(z * Math.SQRT2));
+}
+
+// ── Bootstrap ────────────────────────────────────────────────────────────
+
+/** Deterministic PRNG (LCG) so bootstrap results are reproducible. */
+export function seededRandom(seed: number): () => number {
+  let s = seed >>> 0 || 1;
+  return () => {
+    s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
+    return s / 2 ** 32;
+  };
+}
+
+export function quantile(sorted: number[], q: number): number {
+  if (sorted.length === 0) return NaN;
+  const pos = (sorted.length - 1) * q;
+  const lo = Math.floor(pos);
+  const hi = Math.ceil(pos);
+  return sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo);
+}
+
+export interface DriftBand {
+  lo: number; // 5th percentile of the n-day sum
+  hi: number; // 95th percentile
+  abs: number; // 95th percentile of |sum|
+}
+
+/**
+ * How far n days of these residuals add up to by chance alone: resample the
+ * history with replacement, sum n draws, and read off the 5%/95% bounds.
+ */
+export function bootstrapDrift(residuals: number[], n: number, draws = 2000, seed = 7): DriftBand | null {
+  if (residuals.length < 20) return null;
+  const rand = seededRandom(seed + n);
+  const sums: number[] = [];
+  const abs: number[] = [];
+  for (let i = 0; i < draws; i++) {
+    let s = 0;
+    for (let k = 0; k < n; k++) s += residuals[Math.floor(rand() * residuals.length)];
+    sums.push(s);
+    abs.push(Math.abs(s));
+  }
+  sums.sort((a, b) => a - b);
+  abs.sort((a, b) => a - b);
+  return { lo: quantile(sums, 0.05), hi: quantile(sums, 0.95), abs: quantile(abs, 0.95) };
+}
+
 export function clamp01(x: number): number {
   return Math.max(0, Math.min(1, x));
 }

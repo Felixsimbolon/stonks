@@ -1,15 +1,20 @@
 import { describe, expect, it } from "vitest";
 import {
+  bootstrapDrift,
   detectMoves,
   evaluateFalsifier,
   falsifierPath,
   falsifiersFor,
+  heavyTailP,
   investigate,
+  isCensored,
+  legacyFlag,
   measureMove,
   median,
   ols,
   robustStd,
   std,
+  studentT4Cdf,
   type InvestigationInput,
 } from "..";
 import { scenario } from "./fixtures";
@@ -24,6 +29,28 @@ describe("stats", () => {
     const fit = ols([1, 2, 3, 4], [3, 5, 7, 9]);
     expect(fit.beta).toBeCloseTo(2);
     expect(fit.alpha).toBeCloseTo(1);
+  });
+
+  it("computes heavy-tailed p-values", () => {
+    expect(studentT4Cdf(0)).toBeCloseTo(0.5);
+    expect(studentT4Cdf(1e6)).toBeCloseTo(1, 5);
+    expect(studentT4Cdf(-2)).toBeCloseTo(1 - studentT4Cdf(2), 10);
+    // t4 critical value 2.776 at 97.5%
+    expect(studentT4Cdf(2.776)).toBeCloseTo(0.975, 3);
+    expect(heavyTailP(0)).toBeCloseTo(1);
+    expect(heavyTailP(4)).toBeLessThan(heavyTailP(3));
+    // fatter tails than the normal: a 3σ day is less rare than 0.27%
+    expect(heavyTailP(3)).toBeGreaterThan(0.0027);
+  });
+
+  it("bootstraps drift bands deterministically", () => {
+    const xs = Array.from({ length: 100 }, (_, i) => Math.sin(i) * 0.01);
+    const a = bootstrapDrift(xs, 5)!;
+    expect(bootstrapDrift(xs, 5)).toEqual(a);
+    expect(a.lo).toBeLessThan(0);
+    expect(a.hi).toBeGreaterThan(0);
+    expect(a.abs).toBeGreaterThanOrEqual(Math.max(-a.lo, a.hi) * 0.9);
+    expect(bootstrapDrift(xs.slice(0, 10), 5)).toBeNull();
   });
 
   it("robustStd ignores a few extreme days", () => {
@@ -51,6 +78,32 @@ describe("detector", () => {
   it("does not flag an ordinary day", () => {
     const bars = sc.stock({ seed: 1 });
     expect(detectMoves("TEST", bars, sc.market, 1)).toHaveLength(0);
+  });
+
+  it("attaches p-values and bootstrap drift bands to a move", () => {
+    const bars = sc.stock({ seed: 1, shocks: { [moveDate]: -0.07 } });
+    const move = measureMove("TEST", bars, sc.market, moveDate)!;
+    expect(move.pAbnormal!).toBeLessThan(0.001);
+    expect(move.pValue!).toBeLessThanOrEqual(1);
+    expect(move.drift![5].abs).toBeGreaterThan(move.drift![3].abs);
+  });
+
+  it("keeps false flags near the target on pure noise", () => {
+    const long = scenario(420, 9);
+    const bars = long.stock({ seed: 3 });
+    // 300 quiet sessions; the target is ~0.5 per 60, i.e. ~2.5 expected
+    const flags = detectMoves("TEST", bars, long.market, 300);
+    expect(flags.length).toBeLessThanOrEqual(8);
+    // the old fixed rules flag far more on the same noise
+    const measured = bars.slice(-300).map((b) => measureMove("TEST", bars, long.market, b.date)!).filter(Boolean);
+    expect(measured.filter(legacyFlag).length).toBeGreaterThan(flags.length);
+  });
+
+  it("marks sessions that look capped by a limit or a halt", () => {
+    expect(isCensored({ date: "d", open: 5175, high: 5175, low: 5175, close: 5175, volume: 1 }, -0.148)).toBe(true);
+    expect(isCensored({ date: "d", open: 100, high: 100, low: 92, close: 92, volume: 1 }, -0.08)).toBe(false);
+    expect(isCensored({ date: "d", open: 92, high: 100, low: 92, close: 92, volume: 1 }, -0.08)).toBe(true);
+    expect(isCensored({ date: "d", open: 101, high: 102, low: 99, close: 100, volume: 1 }, 0.01)).toBe(false);
   });
 
   it("returns null without enough history", () => {

@@ -2,6 +2,7 @@
 // fetches data and never calls an LLM. Everything it outputs is reproducible
 // from its inputs.
 
+import type { DriftBand } from "./stats";
 export interface Bar {
   date: string; // YYYY-MM-DD (WIB trading date)
   open: number;
@@ -27,6 +28,15 @@ export interface Move {
   volumeZ: number;
   gap: number; // open / prev close - 1
   triggers: MoveTrigger[];
+  // Significance (heavy-tailed t4 model). Optional so moves frozen in older
+  // case files still load.
+  pAbnormal?: number; // two-sided p of the abnormal return
+  pVolume?: number; // upper-tail p of the volume ratio
+  pValue?: number; // the session's p across both tests (Bonferroni)
+  /** Possibly capped by an auto-rejection limit or a halt; the true move may be larger. */
+  censored?: boolean;
+  /** Bootstrap 5%/95% bounds of 3- and 5-session sums of abnormal returns (for falsifier thresholds). */
+  drift?: Record<3 | 5, DriftBand>;
 }
 
 export type HypothesisType =
