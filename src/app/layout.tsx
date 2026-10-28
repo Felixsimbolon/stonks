@@ -57,6 +57,9 @@ export default function RootLayout({
             <Link href="/mining" className="eyebrow transition-colors hover:text-ink">
               mining
             </Link>
+            <Link href="/lab" className="eyebrow transition-colors hover:text-ink">
+              lab
+            </Link>
           </nav>
         </header>
 

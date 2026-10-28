@@ -3,6 +3,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { revalidatePath } from "next/cache";
 import { LlmError } from "@/lib/llm/client";
+import { runAndSaveBacktest } from "@/lib/lab/run";
 import { generateSummary } from "@/lib/llm/summary";
 import { checkOpenCases, fileCase } from "@/lib/casebook/store";
 import { getAssetBacking, loadCostCurve } from "@/lib/mining/service";
@@ -114,6 +115,19 @@ export async function generateSummaryAction(ticker: string): Promise<FetchResult
     if (e instanceof LlmError) return { error: e.message };
     if (e instanceof Anthropic.RateLimitError) return { error: "Claude is rate-limited right now. Try again in a minute." };
     if (e instanceof Anthropic.APIError) return { error: `Claude API error (${e.status ?? "network"}). Try again.` };
+    return { error: message(e) };
+  }
+}
+
+// ── Lab (local only, 0 credits) ────────────────────────────────────────
+
+export async function runBacktestAction(): Promise<FetchResult> {
+  try {
+    const r = await runAndSaveBacktest();
+    revalidatePath("/lab");
+    const sessions = r.tickers.reduce((a, t) => a + t.sessions, 0);
+    return { message: `replayed ${sessions} sessions · 0 credits` };
+  } catch (e) {
     return { error: message(e) };
   }
 }
