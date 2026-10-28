@@ -52,7 +52,8 @@ export function eventStudy(move: Move, bars: Bar[], marketBars: Bar[], span = 5)
       if (r && m !== undefined) ars.push({ k, date: r.date, ar: r.value - move.beta * m });
     }
   }
-  const sigma = move.residualStd;
+  // Same volatility the detector scored the move with (EWMA), so the significance is consistent.
+  const sigma = move.scoringStd ?? move.residualStd;
   const windows = WINDOWS.map(([label, from, to]) => {
     const inWin = ars.filter((a) => a.k >= from && a.k <= to);
     const car = inWin.reduce((s, a) => s + a.ar, 0);

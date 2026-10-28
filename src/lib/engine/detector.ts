@@ -2,11 +2,13 @@ import {
   align,
   bootstrapDrift,
   dailyReturns,
+  ewmaStd,
   heavyTailP,
-  heavyTailUpperP,
-  median,
+  mean,
   ols,
   robustStd,
+  std,
+  veryHeavyTailUpperP,
   volumeRatioAt,
   zscore,
 } from "./stats";
@@ -14,11 +16,17 @@ import type { Bar, Move, MoveTrigger } from "./types";
 
 // Flagging an unusual session is a hypothesis test run every day, so the
 // threshold is set by the false-alarm rate we accept, not by a round σ.
-// Each session gets two p-values under a heavy-tailed (t4) model:
-//   - abnormal return (beta-adjusted, robust σ), two-sided;
-//   - volume (log ratio to its 20-session average vs its own history), upper tail.
+// Each session gets two p-values:
+//   - abnormal return (beta-adjusted), scaled by EWMA volatility so that a
+//     crash doesn't make every following day look extreme, two-sided under a
+//     unit-variance t(4);
+//   - volume (log ratio to its 20-session average, standardized by its own
+//     history), upper tail under t(3), and only when volume is at least 2× its
+//     average (statistically unusual but small spikes don't count).
 // A session is flagged when either passes α/2 (Bonferroni over the two tests),
 // with α chosen so a quiet stock produces about 0.5 false flags per 60 sessions.
+// Calibrated against out-of-sample tails on stored IDX bank data and on
+// synthetic noise (scripts/tmp diagnostics, Oct 2026).
 
 export interface DetectorOptions {
   lookback: number; // trading days used to estimate beta and residual volatility
@@ -27,6 +35,8 @@ export interface DetectorOptions {
   alphaPerSession: number;
   /** Gaps this large are noted as a trigger when the session is flagged anyway. */
   gapThreshold: number;
+  /** Volume must be at least this multiple of its average to count as a spike. */
+  minVolumeRatio: number;
 }
 
 export const DEFAULT_DETECTOR_OPTIONS: DetectorOptions = {
@@ -34,6 +44,7 @@ export const DEFAULT_DETECTOR_OPTIONS: DetectorOptions = {
   volumeWindow: 20,
   alphaPerSession: 0.5 / 60,
   gapThreshold: 0.03,
+  minVolumeRatio: 2,
 };
 
 /** The original fixed rules (|z| ≥ 2, volume ≥ 2.5×, gap ≥ 3%), kept for the backtest's before/after. */
@@ -89,18 +100,19 @@ export function measureMove(
     history.map((p) => p.a),
   );
   const residualStd = robustStd(fit.residuals);
+  const scoringStd = ewmaStd(fit.residuals);
   const abnormalRet = dayPair.a - fit.beta * dayPair.b;
-  const abnormalZ = residualStd > 0 ? abnormalRet / residualStd : 0;
+  const abnormalZ = scoringStd > 0 ? abnormalRet / scoringStd : 0;
   const pAbnormal = heavyTailP(abnormalZ);
 
   const priorVolumes = bars.slice(Math.max(0, idx - opts.volumeWindow), idx).map((b) => b.volume);
   const volumeRatio = volumeRatioAt(bars, idx, opts.volumeWindow) ?? 0;
   const volumeZ = zscore(bars[idx].volume, priorVolumes);
   const volHistory = volumeLogRatios(bars, idx - opts.lookback, idx, opts.volumeWindow);
-  const volSd = robustStd(volHistory);
+  const volSd = std(volHistory);
   const pVolume =
-    volumeRatio > 0 && volHistory.length >= 20 && volSd > 0
-      ? heavyTailUpperP((Math.log(volumeRatio) - median(volHistory)) / volSd)
+    volumeRatio >= opts.minVolumeRatio && volHistory.length >= 20 && volSd > 0
+      ? veryHeavyTailUpperP((Math.log(volumeRatio) - mean(volHistory)) / volSd)
       : 1;
 
   const gap = bars[idx].open / bars[idx - 1].close - 1;
@@ -122,6 +134,7 @@ export function measureMove(
     beta: fit.beta,
     abnormalRet,
     residualStd,
+    scoringStd,
     abnormalZ,
     volumeRatio,
     volumeZ,

@@ -3,6 +3,7 @@ import {
   bootstrapDrift,
   detectMoves,
   evaluateFalsifier,
+  ewmaStd,
   eventStudy,
   falsifierPath,
   falsifiersFor,
@@ -15,7 +16,9 @@ import {
   ols,
   robustStd,
   std,
+  studentT3Cdf,
   studentT4Cdf,
+  veryHeavyTailUpperP,
   type InvestigationInput,
 } from "..";
 import { scenario } from "./fixtures";
@@ -42,6 +45,17 @@ describe("stats", () => {
     expect(heavyTailP(4)).toBeLessThan(heavyTailP(3));
     // fatter tails than the normal: a 3σ day is less rare than 0.27%
     expect(heavyTailP(3)).toBeGreaterThan(0.0027);
+  });
+
+  it("has a t(3) tail for volume and an EWMA that reacts to recent shocks", () => {
+    // t3 critical value 3.182 at 97.5%
+    expect(studentT3Cdf(3.182)).toBeCloseTo(0.975, 3);
+    expect(veryHeavyTailUpperP(3)).toBeGreaterThan(heavyTailP(3) / 2);
+    const calm = Array.from({ length: 100 }, (_, i) => (i % 2 ? 0.01 : -0.01));
+    const shocked = [...calm, 0.08, -0.07, 0.06];
+    expect(ewmaStd(shocked)).toBeGreaterThan(2 * ewmaStd(calm));
+    // a plain 120-day std barely notices the same three days
+    expect(std(shocked) / std(calm)).toBeLessThan(ewmaStd(shocked) / ewmaStd(calm));
   });
 
   it("bootstraps drift bands deterministically", () => {
@@ -98,6 +112,13 @@ describe("detector", () => {
     // the old fixed rules flag far more on the same noise
     const measured = bars.slice(-300).map((b) => measureMove("TEST", bars, long.market, b.date)!).filter(Boolean);
     expect(measured.filter(legacyFlag).length).toBeGreaterThan(flags.length);
+  });
+
+  it("ignores statistically unusual but small volume (under 2×)", () => {
+    const bars = sc.stock({ seed: 1, volumeShocks: { [moveDate]: 1.8 } });
+    const move = measureMove("TEST", bars, sc.market, moveDate)!;
+    expect(move.pVolume).toBe(1);
+    expect(move.triggers).not.toContain("volume_spike");
   });
 
   it("marks sessions that look capped by a limit or a halt", () => {

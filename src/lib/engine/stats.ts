@@ -98,6 +98,34 @@ export function studentT4Cdf(t: number): number {
   return 0.5 + (3 / 8) * (t / Math.sqrt(k)) * (1 - (t * t) / (12 * k));
 }
 
+/** CDF of Student's t with ν = 3 (closed form). */
+export function studentT3Cdf(t: number): number {
+  const u = t / Math.sqrt(3);
+  return 0.5 + (u / (1 + u * u) + Math.atan(u)) / Math.PI;
+}
+
+/**
+ * One-sided (upper) tail probability of a unit-variance z under a t(3) model
+ * (variance 3). Used for volume, whose log ratio is right-skewed with tails
+ * heavier than t(4) on both real IDX data and synthetic noise.
+ */
+export function veryHeavyTailUpperP(z: number): number {
+  return Math.min(1, 1 - studentT3Cdf(z * Math.sqrt(3)));
+}
+
+/**
+ * EWMA volatility (RiskMetrics, λ = 0.94) of a residual series, seeded with
+ * the mean square of the first 20. Volatility clusters: after a shock, the
+ * next days are judged against the higher recent volatility rather than a
+ * calm 120-day average, which would make every day of a crash look like a 6σ event.
+ */
+export function ewmaStd(residuals: number[], lambda = 0.94): number {
+  if (residuals.length < 20) return std(residuals);
+  let v = mean(residuals.slice(0, 20).map((r) => r * r));
+  for (const r of residuals.slice(20)) v = lambda * v + (1 - lambda) * r * r;
+  return Math.sqrt(v);
+}
+
 /** Two-sided tail probability of a unit-variance z under the t(4) model. */
 export function heavyTailP(z: number): number {
   return Math.min(1, 2 * (1 - studentT4Cdf(Math.abs(z) * Math.SQRT2)));

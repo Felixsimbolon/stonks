@@ -23,7 +23,9 @@ export interface Move {
   beta: number; // estimated vs. the index over the lookback window
   abnormalRet: number; // ret - beta * marketRet
   residualStd: number; // robust (MAD-based) std of daily abnormal returns over the lookback
-  abnormalZ: number; // abnormalRet / residualStd
+  /** EWMA volatility of abnormal returns going into the move (what abnormalZ is scaled by). */
+  scoringStd?: number;
+  abnormalZ: number; // abnormalRet / scoringStd (EWMA), or / residualStd for moves frozen before EWMA
   volumeRatio: number; // volume / avg volume of the prior window
   volumeZ: number;
   gap: number; // open / prev close - 1

@@ -194,6 +194,7 @@ type Path = NonNullable<Result["falsifiers"][number]["path"]>;
 const METRIC: Record<Path["metric"], { label: string; format: (v: number) => string }> = {
   cum_abnormal_return: { label: "beta-adjusted return since the move", format: (v) => pct(v, 1) },
   spread_vs_peer_median: { label: "gap vs peer median since the move", format: (v) => pct(v, 1) },
+  spread_vs_group_median: { label: "gap vs group median since the move", format: (v) => pct(v, 1) },
   retracement: { label: "share of the move given back", format: (v) => `${Math.round(v * 100)}%` },
   avg_volume_ratio: { label: "volume vs pre-move average", format: (v) => `${v.toFixed(1)}×` },
   foreign_flow_ratio: { label: "foreign flow since, vs move-day flow", format: (v) => `${v.toFixed(1)}×` },

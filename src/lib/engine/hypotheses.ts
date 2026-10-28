@@ -373,7 +373,10 @@ const groupContagion: Test = (ctx) => {
     const med = median(excess);
     const breadth = excess.filter((x) => Math.sign(x) === dir).length / excess.length;
     const portion = Math.sign(med) === dir && d.stockSpecific !== 0 ? clamp01(med / d.stockSpecific) : 0;
-    const score = d.shares.stockSpecific * portion * (0.5 + 0.5 * clamp01((breadth - 0.5) / 0.4));
+    // Materiality: a group drift under ~20% of the stock-specific part is ordinary noise
+    // among a handful of members, not an explanation; full credit from ~80%.
+    const material = clamp01((portion - 0.2) / 0.6);
+    const score = d.shares.stockSpecific * material * (0.5 + 0.5 * clamp01((breadth - 0.5) / 0.4));
     return [{ g, med, breadth, n: excess.length, score }];
   });
   if (measured.length === 0) return untested("group_contagion", `Fewer than 2 group members (${groups.map((g) => g.name).join(", ")}) have data on ${move.date}.`);
