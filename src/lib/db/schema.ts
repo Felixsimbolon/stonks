@@ -151,6 +151,13 @@ export const summaries = sqliteTable("summaries", {
   generatedAt: integer("generated_at", { mode: "timestamp_ms" }).notNull(),
 });
 
+/** Generated reports (e.g. the latest backtest), kept in the DB so it works on read-only hosts. */
+export const reports = sqliteTable("reports", {
+  key: text("key").primaryKey(),
+  payload: text("payload", { mode: "json" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+});
+
 export const alerts = sqliteTable("alerts", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   kind: text("kind", { enum: ["move", "falsifier"] }).notNull(),

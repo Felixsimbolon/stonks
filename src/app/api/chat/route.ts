@@ -4,6 +4,8 @@ import { llmConfigured, LlmError } from "@/lib/llm/client";
 import { checkChatInput, type ChatTurn } from "@/lib/llm/guardrails";
 
 export const dynamic = "force-dynamic";
+// Fetch buttons, Claude calls and the backtest can take a while.
+export const maxDuration = 60;
 
 // Ask Stonks: streams newline-delimited JSON events (see ChatEvent).
 

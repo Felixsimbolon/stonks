@@ -13,7 +13,9 @@
     "db:studio": "drizzle-kit studio",
     "investigate": "tsx --env-file-if-exists=.env --tsconfig tsconfig.json scripts/investigate.ts",
     "llm:check": "tsx --env-file-if-exists=.env --tsconfig tsconfig.json scripts/llm-check.ts",
-    "backtest": "tsx --env-file-if-exists=.env --tsconfig tsconfig.json scripts/backtest.ts"
+    "backtest": "tsx --env-file-if-exists=.env --tsconfig tsconfig.json scripts/backtest.ts",
+    "db:push:turso": "drizzle-kit push --config drizzle.turso.config.ts",
+    "db:copy-to-turso": "tsx --env-file-if-exists=.env scripts/copy-to-turso.ts"
   },
   "dependencies": {
     "@anthropic-ai/foundry-sdk": "^1.1.0",

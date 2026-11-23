@@ -126,6 +126,8 @@ export function AskPanel({ configured }: { configured: boolean }) {
     }
   }
 
+  if (pathname === "/login") return null;
+
   return (
     <>
       <motion.button

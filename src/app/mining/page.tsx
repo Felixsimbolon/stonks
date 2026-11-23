@@ -16,6 +16,8 @@ import {
 import { getMiningView } from "@/lib/views";
 
 export const dynamic = "force-dynamic";
+// Fetch buttons, Claude calls and the backtest can take a while.
+export const maxDuration = 60;
 
 export default async function MiningPage() {
   const view = await getMiningView();

@@ -12,6 +12,8 @@ import { env } from "@/lib/env";
 import { countOpenCases, getCredits, getWatchRows, listWatchlist } from "@/lib/views";
 
 export const dynamic = "force-dynamic";
+// Fetch buttons, Claude calls and the backtest can take a while.
+export const maxDuration = 60;
 
 export default async function Home() {
   const tickers = await listWatchlist();

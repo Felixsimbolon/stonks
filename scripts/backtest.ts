@@ -45,7 +45,7 @@ async function main() {
     `Post-move drift: up moves continued ${pct(report.drift.up.continued)} (n=${report.drift.up.n}), down moves ${pct(report.drift.down.continued)} (n=${report.drift.down.n})`,
   );
   for (const n of report.notes) console.log(`note: ${n}`);
-  console.log("\nWrote data/reports/backtest-latest.json · open /lab to see it.");
+  console.log("\nSaved the report to the database · open /lab to see it.");
 }
 
 main().then(

@@ -1,12 +1,14 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { eq } from "drizzle-orm";
+import { db, schema } from "@/lib/db";
 import { getCompanyEvents, getDailyBars, getIndexBars, getPeers, NotCachedError, todayWib } from "@/lib/sectors";
 import { listWatchlist } from "@/lib/views";
 import { runBacktest, type BacktestReport, type TickerHistory } from "./backtest";
 
-// Loading stored history for the backtest and keeping its latest report.
-// Read-only: never calls Sectors.
+// Loading stored history for the backtest and keeping its latest report in
+// the database (so it also works on hosts with a read-only filesystem).
+// Read-only with respect to Sectors: never calls the API.
 
-const REPORT_PATH = "data/reports/backtest-latest.json";
+const REPORT_KEY = "backtest-latest";
 
 async function cached<T>(p: Promise<T>): Promise<T | undefined> {
   try {
@@ -37,15 +39,12 @@ export async function loadHistories(): Promise<TickerHistory[]> {
 
 export async function runAndSaveBacktest(): Promise<BacktestReport> {
   const report = runBacktest(await loadHistories());
-  mkdirSync("data/reports", { recursive: true });
-  writeFileSync(REPORT_PATH, JSON.stringify(report, null, 2));
+  const row = { key: REPORT_KEY, payload: report, updatedAt: new Date() };
+  await db.insert(schema.reports).values(row).onConflictDoUpdate({ target: schema.reports.key, set: row });
   return report;
 }
 
-export function readLatestReport(): BacktestReport | null {
-  try {
-    return JSON.parse(readFileSync(REPORT_PATH, "utf8")) as BacktestReport;
-  } catch {
-    return null;
-  }
+export async function readLatestReport(): Promise<BacktestReport | null> {
+  const [row] = await db.select().from(schema.reports).where(eq(schema.reports.key, REPORT_KEY));
+  return row ? (row.payload as BacktestReport) : null;
 }

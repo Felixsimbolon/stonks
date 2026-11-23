@@ -20,6 +20,8 @@ import { DriversChart, FlowChart, VolumeChart } from "@/components/TickerCharts"
 import { TICKER_RE, getTickerView } from "@/lib/views";
 
 export const dynamic = "force-dynamic";
+// Fetch buttons, Claude calls and the backtest can take a while.
+export const maxDuration = 60;
 
 export default async function TickerPage({
   params,

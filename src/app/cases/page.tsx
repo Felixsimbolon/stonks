@@ -8,6 +8,8 @@ import { TrackRecord } from "@/components/TrackRecord";
 import { getCasesView } from "@/lib/views";
 
 export const dynamic = "force-dynamic";
+// Fetch buttons, Claude calls and the backtest can take a while.
+export const maxDuration = 60;
 
 export default async function CasesPage() {
   const { cases, record, headline, calibration } = await getCasesView();

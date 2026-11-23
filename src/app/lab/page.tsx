@@ -6,9 +6,11 @@ import { LabCharts } from "@/components/LabCharts";
 import { readLatestReport } from "@/lib/lab/run";
 
 export const dynamic = "force-dynamic";
+// Fetch buttons, Claude calls and the backtest can take a while.
+export const maxDuration = 60;
 
-export default function LabPage() {
-  const report = readLatestReport();
+export default async function LabPage() {
+  const report = await readLatestReport();
 
   return (
     <main className="mx-auto max-w-6xl px-5 sm:px-8">
