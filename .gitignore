@@ -43,3 +43,6 @@ next-env.d.ts
 
 # local data (sqlite db, mcp cache)
 /data/
+
+# local agent skills
+/.agents/
